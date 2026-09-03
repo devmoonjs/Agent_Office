@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jarvis</title>
+<script>try{var _t=localStorage.getItem("theme");if(_t)document.documentElement.setAttribute("data-theme",_t)}catch(e){}</script>
+<style>
+:root{color-scheme:dark;
+ --bg:#0f0f0f;--fg:#ececec;--sub:#9a9a9a;--me:#2a2a2a;--me-fg:#ececec;--bot:#1c1c1c;--bd:#232323;--prog:#6a6a6a;--run:#6fcf97;--code:#2a2a2a;--hd:#171717;--field:#1a1a1a;--pri:#ececec;--pri-fg:#111;--scroll:#333}
+:root[data-theme="light"]{color-scheme:light;--bg:#fff;--fg:#18181b;--sub:#5f6368;--me:#e4e4e7;--me-fg:#18181b;--bot:#f1f1f3;--bd:#e5e5e8;--prog:#9a9ca3;--run:#2f9e5f;--code:#e6e6ea;--hd:#f4f4f5;--field:#f4f4f5;--pri:#18181b;--pri-fg:#fff;--scroll:#c8c8cc}
+@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){color-scheme:light;--bg:#fff;--fg:#18181b;--sub:#5f6368;--me:#e4e4e7;--me-fg:#18181b;--bot:#f1f1f3;--bd:#e5e5e8;--prog:#9a9ca3;--run:#2f9e5f;--code:#e6e6ea;--hd:#f4f4f5;--field:#f4f4f5;--pri:#18181b;--pri-fg:#fff;--scroll:#c8c8cc}}
+*{scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}*::-webkit-scrollbar{width:8px}*::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:8px;border:2px solid transparent;background-clip:padding-box}*::-webkit-scrollbar-track{background:transparent}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:var(--bg);color:var(--fg);display:flex;flex-direction:column}
+header{padding:8px 12px;border-bottom:1px solid var(--bd);background:var(--hd);display:flex;align-items:center;gap:10px;flex:none}
+header canvas{width:24px;height:34px;image-rendering:pixelated;flex:none}
+header .t{flex:1;min-width:0}
+header b{font-size:14px}header span{display:block;color:var(--sub);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{flex:none;font-size:10px;padding:2px 8px;border-radius:999px;background:var(--bd);color:var(--sub)}
+.badge.run{background:rgba(52,199,89,.18);color:var(--run)}
+.badge.run::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--run);margin-right:5px;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+/* 지금 하는 일 — 이벤트 로그. 헤더를 눌러 접고 펼친다 */
+#act{flex:none;border-bottom:1px solid var(--bd);font-size:11px}
+#act .h{display:flex;justify-content:space-between;padding:5px 12px;color:var(--sub);cursor:pointer;user-select:none}
+#act .h .now{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin-right:8px}
+#act .log{max-height:110px;overflow-y:auto;padding:0 12px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--prog);display:none}
+#act.open .log{display:block}
+#act .log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#act .log .ts{opacity:.6;margin-right:6px}
+#msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.m{max-width:88%;padding:8px 12px;border-radius:16px;word-break:break-word}
+.m.user{align-self:flex-end;background:var(--me);color:var(--me-fg);border-bottom-right-radius:6px;white-space:pre-wrap}
+.m.assistant{align-self:flex-start;background:var(--bot);border-bottom-left-radius:6px}
+.m.sys{align-self:center;color:var(--sub);font-size:11px;background:none}
+.who{font-size:10px;color:var(--sub);margin:0 0 -4px 4px}
+.prog{font-size:11px;color:var(--prog);margin-top:6px;max-height:96px;overflow-y:auto;border-top:1px dashed var(--bd);padding-top:4px}
+/* 마크다운 — 채팅 말풍선 안에서 문법 기호 대신 서식으로 보이게 */
+.md p{margin:0 0 6px}.md p:last-child{margin-bottom:0}
+.md h1,.md h2,.md h3{font-size:13px;font-weight:700;margin:8px 0 4px}.md h1{font-size:14px}
+.md ul,.md ol{margin:2px 0 6px;padding-left:18px}.md li{margin:1px 0}
+.md code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--code);padding:1px 5px;border-radius:4px}
+.md pre{background:var(--code);padding:8px;border-radius:8px;overflow-x:auto;margin:4px 0 6px}.md pre code{background:none;padding:0;white-space:pre}
+.md table{border-collapse:collapse;margin:4px 0 6px;font-size:12px;display:block;overflow-x:auto}
+.md th,.md td{border:1px solid var(--bd);padding:3px 7px;text-align:left}.md th{background:var(--code)}
+.md blockquote{margin:4px 0;padding:2px 10px;border-left:3px solid var(--bd);color:var(--sub)}
+.md hr{border:0;border-top:1px solid var(--bd);margin:6px 0}
+form{flex:none;display:flex;gap:6px;padding:8px 10px 10px;border-top:1px solid var(--bd)}
+textarea{flex:1;resize:none;height:40px;max-height:120px;padding:8px 12px;border:1px solid var(--bd);border-radius:20px;background:var(--field);color:var(--fg);font:inherit;outline:none}
+textarea:focus{border-color:var(--prog)}
+button{flex:none;padding:0 14px;border:0;border-radius:20px;background:var(--pri);color:var(--pri-fg);font:inherit;font-weight:600}
+button:disabled{opacity:.45}
+body.dragover #msgs{outline:2px dashed var(--me);outline-offset:-4px}
+#attach{flex:none;display:flex;flex-wrap:wrap;gap:5px;padding:0 10px 6px}#attach:empty{display:none}
+#attach .att{font-size:10.5px;color:var(--sub);background:var(--code);border-radius:6px;padding:2px 7px;display:flex;gap:5px;align-items:center;max-width:240px}
+#attach .att span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#attach .att.up{font-style:italic}#attach .att.err{color:#ff453a}
+#attach .att button{background:none;color:var(--sub);padding:0;font-size:11px}
+</style></head><body>
+<header><canvas id="spr" width="24" height="34"></canvas><div class="t"><b id="title">비서</b><span id="desc"></span></div><span id="badge" class="badge">대기</span></header>
+<div id="act"><div class="h"><span class="now" id="now">최근 활동 없음</span><span id="tog">로그 ▸</span></div><div class="log" id="log"></div></div>
+<div id="msgs"></div>
+<div id="attach"></div>
+<form id="f"><textarea id="in" placeholder="메시지 (Enter 전송, Shift+Enter 줄바꿈)" autofocus></textarea><button id="send">전송</button></form>
+<script>
+// ?agent=secretary | scribe… (기능) | proj:<repo> | cast:<직원id>
+// 서버의 기존 채팅 API를 그대로 쓴다 — 이력은 맵 UI와 공유된다.
+var q=new URLSearchParams(location.search),agent=q.get('agent')||'secretary';if(agent==='jarvis')agent='secretary';
+var mode=agent==='secretary'?'sec':agent.indexOf('cast:')===0?'cast':'agent';
+var msgs=document.getElementById('msgs'),inp=document.getElementById('in'),btn=document.getElementById('send'),busy=false;
+
+// ── 캐릭터 (map.html body()와 같은 비율) — 작업 중이면 팔이 위아래로 움직인다
+var SPR={color:'#e07a3e',hair:'#3b3f4a'},working=false,step=0;
+function drawSprite(){var c=document.getElementById('spr').getContext('2d');c.clearRect(0,0,24,34);
+ var ab=working?Math.round(Math.sin(step*2)*2):0,bob=working?(Math.sin(step)>0?1:0):0;
+ c.fillStyle='#191c23';c.fillRect(7,26,4,7);c.fillRect(13,26,4,7);
+ c.fillStyle=SPR.color;c.fillRect(5,14-bob,14,12);c.fillRect(2,16+ab-bob,3,7);c.fillRect(19,16-ab-bob,3,7);
+ c.fillStyle='#ecc9a3';c.fillRect(7,4-bob,10,10);c.fillStyle=SPR.hair;c.fillRect(7,2-bob,10,4);
+ c.fillStyle='#191c23';c.fillRect(9,8-bob,2,2);c.fillRect(13,8-bob,2,2)}
+setInterval(function(){if(working){step+=0.35;drawSprite()}},120);
+
+// ── 마크다운 (map.html의 md()와 동일 규칙)
+function esc(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function mdInline(t){
+ t=t.replace(/`([^`]+)`/g,function(m,c){return'<code>'+c+'</code>'});
+ t=t.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+ t=t.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,'$1<i>$2</i>');
+ return t}
+function md(src){
+ var lines=esc(src).split('\n'),out=[],i=0;
+ function flushP(buf){if(buf.length)out.push('<p>'+buf.map(mdInline).join('<br>')+'</p>');buf.length=0}
+ var para=[];
+ while(i<lines.length){
+  var L=lines[i];
+  if(/^```/.test(L)){flushP(para);var code=[];i++;
+   while(i<lines.length&&!/^```/.test(lines[i]))code.push(lines[i++]);
+   i++;out.push('<pre><code>'+code.join('\n')+'</code></pre>');continue}
+  var h=L.match(/^(#{1,3})\s+(.*)/);
+  if(h){flushP(para);var n=h[1].length;out.push('<h'+n+'>'+mdInline(h[2])+'</h'+n+'>');i++;continue}
+  if(/^(---|\*\*\*)\s*$/.test(L)){flushP(para);out.push('<hr>');i++;continue}
+  if(/^\s*&gt;\s?/.test(L)){flushP(para);var qq=[];
+   while(i<lines.length&&/^\s*&gt;\s?/.test(lines[i]))qq.push(lines[i++].replace(/^\s*&gt;\s?/,''));
+   out.push('<blockquote>'+qq.map(mdInline).join('<br>')+'</blockquote>');continue}
+  if(/^\s*[-*]\s+/.test(L)){flushP(para);var ul=[];
+   while(i<lines.length&&/^\s*[-*]\s+/.test(lines[i]))ul.push(lines[i++].replace(/^\s*[-*]\s+/,''));
+   out.push('<ul>'+ul.map(function(x){return'<li>'+mdInline(x)+'</li>'}).join('')+'</ul>');continue}
+  if(/^\s*\d+\.\s+/.test(L)){flushP(para);var ol=[];
+   while(i<lines.length&&/^\s*\d+\.\s+/.test(lines[i]))ol.push(lines[i++].replace(/^\s*\d+\.\s+/,''));
+   out.push('<ol>'+ol.map(function(x){return'<li>'+mdInline(x)+'</li>'}).join('')+'</ol>');continue}
+  if(/^\s*\|.*\|\s*$/.test(L)){flushP(para);var tb=[];
+   while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i]))tb.push(lines[i++]);
+   var rows=tb.map(function(r){return r.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split('|').map(function(c){return c.trim()})});
+   var hasSep=rows.length>1&&rows[1].every(function(c){return/^:?-{2,}:?$/.test(c)});
+   var html='<table>';
+   rows.forEach(function(r,ri){
+    if(hasSep&&ri===1)return;
+    var tag=(hasSep&&ri===0)?'th':'td';
+    html+='<tr>'+r.map(function(c){return'<'+tag+'>'+mdInline(c)+'</'+tag+'>'}).join('')+'</tr>'});
+   out.push(html+'</table>');continue}
+  if(/^\s*$/.test(L)){flushP(para);i++;continue}
+  para.push(L);i++}
+ flushP(para);return out.join('')}
+
+// ── 메시지
+function add(role,text,who){
+ if(who){var w=document.createElement('div');w.className='who';w.textContent=who;msgs.appendChild(w)}
+ var d=document.createElement('div');d.className='m '+role;
+ if(role==='assistant'){var v=document.createElement('div');v.className='md';v.innerHTML=md(text);d.appendChild(v)}
+ else d.textContent=text;
+ msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d}
+function setTitle(){
+ drawSprite();
+ fetch('/agents').then(function(r){return r.json()}).then(function(a){
+  var all=[].concat(a.functions||[],a.projects||[],a.casting||[]);
+  all.forEach(function(c){if(c.key===agent){
+   document.getElementById('title').textContent=c.name;document.title=c.name;
+   document.getElementById('desc').textContent=c.desc||c.path||(agent==='secretary'?'vault 전체를 보고 답한다':'');
+   if(c.color){SPR={color:c.color,hair:c.hair||'#3b3f4a'};drawSprite()}}})}).catch(function(){})}
+function historyUrl(){return mode==='sec'?'/chat':mode==='cast'?'/casting/chat?id='+encodeURIComponent(agent.slice(5)):'/agent/chat?agent='+encodeURIComponent(agent)}
+function history(){
+ fetch(historyUrl(),{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+  (d.messages||[]).slice(-40).forEach(function(m){add(m.role,m.text,m.role==='assistant'?m.who:null)});
+  if(!(d.messages||[]).length)add('sys','대화를 시작하세요')})
+ .catch(function(){add('sys','서버에 연결할 수 없습니다 — Agent Office 서버가 꺼져 있습니다')})}
+
+// ── 지금 하는 일: /events에서 이 에이전트의 이벤트만 골라 보여준다. 채팅과 독립적으로 2초마다 갱신
+var evSince=0,lastEvAt=0,logEl=document.getElementById('log'),nowEl=document.getElementById('now'),badge=document.getElementById('badge');
+document.querySelector('#act .h').addEventListener('click',function(){var a=document.getElementById('act');a.classList.toggle('open');
+ document.getElementById('tog').textContent=a.classList.contains('open')?'로그 ▾':'로그 ▸';logEl.scrollTop=logEl.scrollHeight});
+function ago(ts){var p=ts.split(':'),d=new Date();d.setHours(+p[0],+p[1],+p[2],0);var diff=Date.now()-d.getTime();return diff<0?diff+86400000:diff}
+function setWorking(on,note){working=on;badge.className='badge'+(on?' run':'');badge.textContent=on?(note||'작업 중'):'대기';if(!on)drawSprite()}
+function pollEvents(){
+ fetch('/events?since='+evSince,{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+  var mine=(d.events||[]).filter(function(e){return e.agent===agent});
+  if(evSince===0)mine=mine.slice(-30);              // 첫 로드는 최근 30건만
+  mine.forEach(function(e){var row=document.createElement('div');
+   row.innerHTML='<span class="ts">'+esc(e.ts)+'</span>'+esc(e.text);logEl.appendChild(row);
+   nowEl.textContent=e.ts+'  '+e.text;lastEvAt=Math.max(lastEvAt,Date.now()-ago(e.ts))});
+  if(mine.length){while(logEl.children.length>60)logEl.removeChild(logEl.firstChild);logEl.scrollTop=logEl.scrollHeight}
+  evSince=d.last||evSince;
+  var run=(d.runs||{})[agent];
+  // 실행 플래그가 있으면 그 상태를, 없으면(프로젝트 에이전트 등) 최근 90초 안에 이벤트가 있었는지로 판단
+  var on=!!(run&&run.running)||(Date.now()-lastEvAt<90000);
+  setWorking(on,run&&run.running?(run.note||'작업 중'):(on?'활동 중':''))})
+ .catch(function(){})}
+pollEvents();setInterval(pollEvents,2000);
+
+// ── 전송
+function finishWith(t,reply,who){t.remove();add('assistant',reply,who);busy=false;btn.disabled=false;inp.focus()}
+function pollJob(t,prog,job){
+ var seen=0,miss=0,iv=setInterval(function(){
+  fetch('/chat/progress?job='+encodeURIComponent(job)+'&since='+seen,{cache:'no-store'})
+   .then(function(r){return r.json()}).then(function(p){miss=0;
+    (p.lines||[]).forEach(function(L){var e=document.createElement('div');e.textContent=L;prog.appendChild(e);seen++});
+    if(p.lines&&p.lines.length){prog.scrollTop=prog.scrollHeight;msgs.scrollTop=msgs.scrollHeight}
+    if(p.done){clearInterval(iv);finishWith(t,p.reply||'(응답 없음)')}})
+   .catch(function(){if(++miss>10){clearInterval(iv);finishWith(t,'(연결 오류 — 서버 로그를 확인)')}})},1000)}
+// ── 드래그앤드롭 첨부: /upload에 올리고 전송 시 메시지 끝에 경로를 붙인다
+var ATT=[],attEl=document.getElementById('attach');
+function attUpload(f){var d=document.createElement('div');d.className='att up';d.innerHTML='<span>⇡ '+esc(f.name)+'</span>';attEl.appendChild(d);
+ fetch('/upload',{method:'POST',headers:{'X-File-Name':encodeURIComponent(f.name)},body:f})
+  .then(function(r){if(!r.ok)throw r.status;return r.json()})
+  .then(function(res){var rec={name:res.name,path:res.path};ATT.push(rec);d.className='att';
+   d.innerHTML='<span>📎 '+esc(res.name)+'</span><button type="button" title="제거">✕</button>';
+   d.querySelector('button').addEventListener('click',function(){ATT=ATT.filter(function(x){return x!==rec});d.remove()})})
+  .catch(function(e){d.className='att err';d.innerHTML='<span>✕ '+esc(f.name)+(e===413?' — 50MB 초과':' — 업로드 실패')+'</span>';setTimeout(function(){d.remove()},4000)})}
+['dragenter','dragover'].forEach(function(ev){document.addEventListener(ev,function(e){
+ if(!(e.dataTransfer&&Array.prototype.indexOf.call(e.dataTransfer.types,'Files')>=0))return;
+ e.preventDefault();e.dataTransfer.dropEffect='copy';document.body.classList.add('dragover')})});
+document.addEventListener('dragleave',function(e){if(!e.relatedTarget)document.body.classList.remove('dragover')});
+document.addEventListener('drop',function(e){e.preventDefault();document.body.classList.remove('dragover');
+ Array.prototype.forEach.call((e.dataTransfer||{}).files||[],attUpload)});
+function attTake(text){if(!ATT.length)return text;
+ var blk='\n\n[첨부 파일 — 아래 경로를 직접 읽어서 참고할 것]\n'+ATT.map(function(f){return '- '+f.path+' ('+f.name+')'}).join('\n');
+ ATT=[];attEl.innerHTML='';return text+blk}
+function send(){
+ var text=inp.value.trim();if((!text&&!ATT.length)||busy)return;
+ text=attTake(text||'첨부한 파일을 확인해 주세요.');
+ busy=true;btn.disabled=true;inp.value='';add('user',text);
+ var t=add('assistant','작업 중… (수십 초에서 수 분)');
+ var prog=document.createElement('div');prog.className='prog';t.appendChild(prog);
+ var url=mode==='sec'?'/chat':mode==='cast'?'/casting/chat':'/agent/chat';
+ var body=mode==='sec'?{text:text}:mode==='cast'?{id:Number(agent.slice(5)),text:text,async:1}:{agent:agent,text:text};
+ fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  .then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){
+   if(d.reply){finishWith(t,d.reply);return}
+   // 네이티브(메뉴바 앱)에 job을 알린다 — 팝오버를 닫아도 앱이 완료를 감시해 말풍선 알림을 띄운다
+   try{window.webkit.messageHandlers.jarvis.postMessage({type:'job',agent:agent,name:document.getElementById('title').textContent,job:String(d.job)})}catch(e){}
+   pollJob(t,prog,d.job)})
+  .catch(function(){finishWith(t,'(연결 오류 — 서버 로그를 확인)')})}
+document.getElementById('f').addEventListener('submit',function(e){e.preventDefault();send()});
+inp.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+setTitle();history();
+</script></body></html>

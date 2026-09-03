@@ -1,0 +1,10 @@
+{
+  "prompts": {},
+  "schedules": {
+    "brief": {
+      "at": "09:55",
+      "dow": null,
+      "enabled": true
+    }
+  }
+}

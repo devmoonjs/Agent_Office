@@ -1,0 +1,43 @@
+# 작업 캐시 (diff 수집, 검토표, cypher)
+.cache/
+.omc/
+
+# Obsidian 설정 (workspace 등 상시 변경 노이즈)
+.obsidian/
+
+# Notion 동기화 토큰 — 절대 커밋 금지
+90-Meta/.env
+
+# Neo4j — 시크릿과 DB 데이터는 절대 커밋 금지
+90-Meta/neo4j/.env
+90-Meta/neo4j/data/
+90-Meta/neo4j/logs/
+
+# 조직 활동 기록 — 전 직원 업무 내역. 덤프에서 언제든 재생성되는 파생 데이터이며
+# git 히스토리에 영구 기록되는 것을 피하기 위해 제외한다 (버전 관리가 필요하면 이 줄을 지운다)
+70-Activity/
+
+.DS_Store
+
+# 파이썬 빌드 산출물
+__pycache__/
+*.pyc
+
+# 녹음 원본 — 회의당 수십 MB. 디스크에는 보존하되 git 이력에는 넣지 않는다
+60-Sources/meetings/recordings/
+
+# 오디오 원본 — 위치와 무관하게 git 이력에 넣지 않는다 (디스크에는 그대로 보존)
+*.m4a
+*.webm
+*.mp3
+*.wav
+*.ogg
+
+# JarvisBar(메뉴바 앱) 빌드 산출물
+90-Meta/menubar/.build/
+90-Meta/menubar/dist/
+
+# 배포본: 볼트 골격은 유지하고 내용물만 제외한다
+90-Meta/.env
+!70-Activity/.gitkeep
+!60-Sources/meetings/recordings/.gitkeep
