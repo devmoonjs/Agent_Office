@@ -18,4 +18,4 @@ fi
 
 echo
 echo "다음: 90-Meta/repos.md 에 분석 대상 repo 경로를 적고"
-echo "      python3 90-Meta/map-ui/server.py  →  http://127.0.0.1:57800"
+echo "      python3 90-Meta/map-ui/server.py  →  http://127.0.0.1:57910"
