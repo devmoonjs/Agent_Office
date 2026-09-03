@@ -15,7 +15,7 @@
 
 # 조직 활동 기록 — 전 직원 업무 내역. 덤프에서 언제든 재생성되는 파생 데이터이며
 # git 히스토리에 영구 기록되는 것을 피하기 위해 제외한다 (버전 관리가 필요하면 이 줄을 지운다)
-70-Activity/
+70-Activity/*
 
 .DS_Store
 
@@ -39,5 +39,5 @@ __pycache__/
 
 # 배포본: 볼트 골격은 유지하고 내용물만 제외한다
 90-Meta/.env
-!70-Activity/.gitkeep
 !60-Sources/meetings/recordings/.gitkeep
+!70-Activity/.gitkeep
