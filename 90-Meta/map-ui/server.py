@@ -2763,6 +2763,13 @@ def term_start(agent_key):
             return {"error": f"ttyd 실행 실패: {e}"}
         _terms[agent_key] = {"port": port, "proc": proc, "session": session, "cwd": str(cwd)}
     time.sleep(0.35)     # ttyd가 리슨을 열 때까지 — iframe이 먼저 붙으면 빈 화면이 된다
+    # 로그인 전용 세션 — 열자마자 로그인 명령을 보낸다
+    if agent_key == "login-claude":
+        subprocess.Popen(["tmux", "send-keys", "-t", session, "claude", "Enter"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif agent_key == "login-codex":
+        subprocess.Popen(["tmux", "send-keys", "-t", session, "codex login", "Enter"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return {"url": f"http://127.0.0.1:{port}", "session": session, "cwd": str(cwd)}
 
 
