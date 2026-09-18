@@ -1401,11 +1401,19 @@ function failUpdate(msg){var el=$('m-ver');if(!el)return;
 
 function pollUpdate(){
  if(UPD.polling)return; UPD.polling=true;
- var miss=0,iv=setInterval(function(){
+ var miss=0,seen=0,iv=setInterval(function(){
   fetch('/api/update/progress',{cache:'no-store'}).then(function(r){return r.json()}).then(function(p){
    miss=0;
    var bar=$('m-up-bar'),lab=$('m-up-label'),log=$('m-up-log');
    if(!bar){clearInterval(iv);UPD.polling=false;return}   // 모달이 닫혔다
+   // 진행하던 작업이 초기 상태로 돌아왔다 = 서버가 재시작돼 새 프로세스가 답하고 있다.
+   // (done=true 를 보기 전에 재시작이 끼어든 경우. 폴링이 영원히 도는 것을 막는다.)
+   if(seen>0&&!p.done&&(p.step||0)===0&&!p.running){
+    clearInterval(iv);UPD.polling=false;bar.classList.remove('run');
+    bar.firstChild.style.width='100%';
+    if(lab)lab.innerHTML='<span style="color:var(--ok)">서버 재시작 중. 잠시 후 새로고침합니다.</span>';
+    waitForServer();return}
+   if((p.step||0)>0)seen=p.step;
    var pct=Math.max(4,Math.round((p.step||0)/(p.total||5)*100));
    bar.firstChild.style.width=pct+'%';
    if(lab)lab.textContent=(p.step||0)+'/'+(p.total||5)+'  '+(p.label||'');
