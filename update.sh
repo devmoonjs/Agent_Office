@@ -11,6 +11,14 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 MODE="${1:-run}"
+
+# 진행 상황 마커 — 서버가 stdout을 한 줄씩 읽어 UI 게이지로 그린다.
+#   ::step:<현재>:<전체>:<라벨>    단계 전환
+#   ::log:<텍스트>                 로그 한 줄
+# 마지막 줄은 항상 결과 JSON이다.
+TOTAL=5
+step() { printf '::step:%s:%s:%s\n' "$1" "$TOTAL" "$2"; }
+log()  { printf '::log:%s\n' "$1"; }
 # 추적 중인 원격 브랜치. 설정돼 있지 않으면 origin/main 으로 본다.
 UPSTREAM="$(git rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo origin/main)"
 REMOTE="${UPSTREAM%%/*}"
@@ -21,6 +29,7 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
+[ "$MODE" != "--check" ] && step 1 "원격 저장소 확인"
 git fetch --quiet "$REMOTE" "$BRANCH" 2>/dev/null || {
   echo '{"ok":false,"error":"원격 조회 실패 — 네트워크를 확인한다"}'
   exit 1
@@ -54,6 +63,7 @@ if [ -n "$DIRTY" ] && [ "$MODE" != "--force" ]; then
 fi
 
 if [ -n "$DIRTY" ]; then
+  step 2 "로컬 수정 백업"
   TS="$(date +%Y%m%d-%H%M%S)"
   BK=".agent-office/backup/$TS"
   mkdir -p "$BK"
@@ -64,15 +74,17 @@ if [ -n "$DIRTY" ]; then
     cp "$f" "$BK/$f"
   done
   git checkout -- $(echo "$DIRTY" | tr ',' ' ') 2>/dev/null
-  echo "  로컬 수정을 $BK 에 백업했다." >&2
+  log "로컬 수정을 $BK 에 백업했습니다"
 fi
 
+step 3 "새 버전 내려받기"
 if ! git pull --ff-only --quiet "$REMOTE" "$BRANCH" 2>&1; then
   json false ',"error":"git pull 실패 — 터미널에서 직접 확인이 필요하다"'
   exit 1
 fi
 
-bash setup.sh >&2 || true
+step 4 "설정 파일·의존성 점검"
+bash setup.sh 2>&1 | while IFS= read -r line; do log "$line"; done || true
 
 CUR="$(git rev-parse --short HEAD)"
 CUR_TS="$(git log -1 --date=format:'%Y-%m-%d' --pretty=%ad)"

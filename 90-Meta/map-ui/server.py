@@ -2866,23 +2866,76 @@ def update_status(force_fetch=False):
     return data
 
 
-def update_apply(force=False):
-    """update.sh 실행 → 성공하면 서버를 재기동한다(새 코드를 메모리에 올리기 위해)."""
+# 업데이트는 네트워크·apt를 타서 수십 초가 걸린다. 요청을 붙잡아 두면 브라우저가
+# 멈춘 것처럼 보이므로 백그라운드 작업으로 돌리고 진행률을 폴링하게 한다.
+UPDATE_JOB = {"running": False, "step": 0, "total": 5, "label": "",
+              "lines": [], "done": False, "result": None}
+_update_lock = threading.Lock()
+
+
+def update_progress():
+    with _update_lock:
+        return dict(UPDATE_JOB, lines=UPDATE_JOB["lines"][-40:])
+
+
+def update_start(force=False):
+    """update.sh를 백그라운드로 실행한다. 이미 돌고 있으면 그 작업을 그대로 쓴다."""
     if not UPDATE_SH.is_file():
         return {"ok": False, "error": "update.sh가 없습니다 — 구버전 설치입니다"}
+    with _update_lock:
+        if UPDATE_JOB["running"]:
+            return {"ok": True, "started": False, "running": True}
+        UPDATE_JOB.update(running=True, step=0, label="시작하는 중", lines=[],
+                          done=False, result=None)
+    threading.Thread(target=_update_work, args=(force,), daemon=True).start()
+    return {"ok": True, "started": True}
+
+
+def _update_work(force):
+    """stdout을 한 줄씩 읽어 ::step: / ::log: 마커를 진행 상태로 옮긴다.
+    마커가 아닌 마지막 줄이 결과 JSON이다."""
     args = ["bash", str(UPDATE_SH)] + (["--force"] if force else [])
+    result, last = None, ""
     try:
-        r = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=600)
-        data = json.loads((r.stdout or "").strip().splitlines()[-1])
-    except (OSError, subprocess.SubprocessError, ValueError, IndexError) as e:
-        return {"ok": False, "error": f"업데이트 실패: {str(e)[:200]}"}
+        proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                stdin=subprocess.DEVNULL, bufsize=1)
+        for raw in proc.stdout:
+            line = raw.rstrip("\n")
+            if line.startswith("::step:"):
+                parts = line.split(":", 4)          # '', '', 'step', n, 'total:label'
+                try:
+                    cur, total, label = int(parts[3]), int(parts[4].split(":", 1)[0]), \
+                        parts[4].split(":", 1)[1]
+                except (IndexError, ValueError):
+                    continue
+                with _update_lock:
+                    UPDATE_JOB.update(step=cur, total=total, label=label)
+                    UPDATE_JOB["lines"].append(f"[{cur}/{total}] {label}")
+            elif line.startswith("::log:"):
+                s = line[6:].strip()
+                if s:
+                    with _update_lock:
+                        UPDATE_JOB["lines"].append("  " + s[:160])
+            elif line.strip():
+                last = line.strip()
+        proc.wait(timeout=30)
+        result = json.loads(last)
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        result = {"ok": False, "error": f"업데이트 실패: {str(e)[:200]}"}
     _update_cache.update(ts=0, data=None)
-    if data.get("ok") and data.get("message", "").startswith("업데이트 완료"):
+    restarting = bool(result.get("ok") and
+                      str(result.get("message", "")).startswith("업데이트 완료"))
+    if restarting:
+        result["restarting"] = True
         emit("system", "업데이트 완료 — 서버를 재시작합니다")
-        # 응답을 먼저 보내고 재시작한다. 브라우저는 폴링이 끊겼다가 다시 붙는다.
-        threading.Timer(1.5, _restart_self).start()
-        data["restarting"] = True
-    return data
+    with _update_lock:
+        UPDATE_JOB.update(running=False, done=True, result=result,
+                          step=UPDATE_JOB["total"] if restarting else UPDATE_JOB["step"],
+                          label="완료" if restarting else "중단됨")
+    if restarting:
+        # 브라우저가 마지막 진행률을 한 번 더 받아갈 시간을 준 뒤 재기동한다.
+        threading.Timer(2.0, _restart_self).start()
 
 
 def _restart_self():
@@ -3009,6 +3062,8 @@ class H(BaseHTTPRequestHandler):
             self._json(get_usage())
         elif u.path == "/api/version":
             self._json(update_status(parse_qs(u.query).get("refresh", [""])[0] == "1"))
+        elif u.path == "/api/update/progress":
+            self._json(update_progress())
         elif u.path == "/api/config":
             cfg = ao_config()
             self._json({"transcribeModel": cfg.get("transcribeModel", "small"),
@@ -3319,7 +3374,7 @@ class H(BaseHTTPRequestHandler):
                 b = json.loads(self.rfile.read(n).decode()) if n else {}
             except (ValueError, json.JSONDecodeError):
                 b = {}
-            self._json(update_apply(force=bool(b.get("force"))))
+            self._json(update_start(force=bool(b.get("force"))))
             return
         if path == "/api/config":
             try:
