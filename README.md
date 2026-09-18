@@ -95,13 +95,26 @@ python3 90-Meta/map-ui/server.py    # http://127.0.0.1:57910
 
 ## 업데이트
 
-설정 화면(왼쪽 아래 ⚙) > **버전** 절의 `[업데이트]` 버튼을 누른다. 내려받고 서버까지 자동으로 재시작한다.
+새 버전이 나오면 설정(⚙) 버튼에 점이 찍힌다. 설정 화면 > **버전** 절의 `[업데이트]`를 누르면
+진행률 게이지와 로그를 보여주면서 내려받고, 끝나면 서버를 재시작한 뒤 화면을 새로고침한다.
+터미널을 열 필요가 없다.
+
+```
+[3/5] 새 버전 내려받기
+████████████░░░░░░░░  60%
+```
 
 터미널에서 하려면:
 
 ```bash
-cd ~/Agent_Office && bash update.sh      # 상태만 보려면 bash update.sh --check
+cd ~/Agent_Office
+bash update.sh --check    # 상태만 조회 (JSON)
+bash update.sh            # 업데이트
+bash update.sh --force    # 로컬 수정을 .agent-office/backup/ 에 백업한 뒤 덮어쓰기
 ```
+
+사용자 파일(`90-Meta/repos.md`, `90-Meta/.env`, `.agent-office/`, 볼트 노트)은 git 추적
+대상이 아니므로 업데이트가 덮어쓰지 않는다.
 
 ## 윈도우 설치 (WSL2)
 
