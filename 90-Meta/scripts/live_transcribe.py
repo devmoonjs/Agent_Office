@@ -16,13 +16,65 @@ stdout에는 JSON 외의 줄이 섞일 수 있으므로(모델 다운로드 진�
 '{'로 시작하는 줄만 파싱한다.
 """
 import json
+import os
 import sys
+from pathlib import Path
 
-MODEL = "mlx-community/whisper-large-v3-turbo"
+# 전사 모델: 환경변수 > config.json > 기본값(small)
+def _resolve_model():
+    if os.environ.get("TRANSCRIBE_MODEL"):
+        return os.environ["TRANSCRIBE_MODEL"]
+    cfg = Path(__file__).resolve().parents[2] / ".agent-office" / "config.json"
+    try:
+        return json.loads(cfg.read_text(encoding="utf-8")).get("transcribeModel", "small")
+    except (OSError, ValueError):
+        return "small"
+
+_TX_MODEL = _resolve_model()
+MLX_MODEL = f"mlx-community/whisper-{_TX_MODEL}"
+
+# 엔진 선택: Apple Silicon이면 mlx-whisper, 아니면 faster-whisper
+_USE_MLX = sys.platform == "darwin"
+_engine = None   # "mlx" | "fw" | None (초기화 전)
+
+
+def _init_mlx():
+    global _engine
+    import mlx_whisper  # noqa: F811
+    _engine = "mlx"
+    return mlx_whisper
+
+
+def _init_fw():
+    global _engine
+    from faster_whisper import WhisperModel
+    device, ct = "cpu", "int8"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            device, ct = "cuda", "float16"
+    except ImportError:
+        pass
+    _init_fw._model = WhisperModel(_TX_MODEL, device=device, compute_type=ct)
+    _engine = "fw"
+    return _init_fw._model
 
 
 def main():
-    import mlx_whisper
+    # 엔진 초기화 — 실패 시 사유를 JSON으로 돌려주고 종료한다
+    mlx_mod, fw_model = None, None
+    if _USE_MLX:
+        try:
+            mlx_mod = _init_mlx()
+        except ImportError:
+            print(json.dumps({"ready": False, "error": "mlx-whisper 미설치 — Apple Silicon 전용 실시간 전사 불가"}), flush=True)
+            sys.exit(1)
+    else:
+        try:
+            fw_model = _init_fw()
+        except ImportError:
+            print(json.dumps({"ready": False, "error": "faster-whisper 미설치 — 실시간 전사 미지원. pip install faster-whisper"}), flush=True)
+            sys.exit(1)
 
     print(json.dumps({"ready": True}), flush=True)
     for line in sys.stdin:
@@ -30,10 +82,16 @@ def main():
         if not path:
             continue
         try:
-            # condition_on_previous_text=False — 조각 단위 전사에서 이전 문맥을 물면 반복 루프에 빠진다
-            r = mlx_whisper.transcribe(path, path_or_hf_repo=MODEL, language="ko",
+            if _engine == "mlx":
+                # condition_on_previous_text=False — 조각 단위 전사에서 이전 문맥을 물면 반복 루프에 빠진다
+                r = mlx_mod.transcribe(path, path_or_hf_repo=MLX_MODEL, language="ko",
                                        condition_on_previous_text=False, verbose=None)
-            out = {"ok": True, "path": path, "text": (r.get("text") or "").strip()}
+                out = {"ok": True, "path": path, "text": (r.get("text") or "").strip()}
+            else:
+                segments, _ = fw_model.transcribe(str(path), language="ko",
+                                                   condition_on_previous_text=False)
+                text = " ".join(seg.text.strip() for seg in segments)
+                out = {"ok": True, "path": path, "text": text}
         except Exception as e:                                   # noqa: BLE001 — 어떤 실패든 다음 조각으로 넘어간다
             out = {"ok": False, "path": path, "error": str(e)[:200]}
         print(json.dumps(out, ensure_ascii=False), flush=True)

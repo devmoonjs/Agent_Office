@@ -2277,8 +2277,10 @@ def _live_transcriber():
     if p and p.poll() is None:
         return p
     uv = shutil.which("uv") or str(Path.home() / "anaconda3" / "bin" / "uv")
+    # Apple Silicon이면 mlx-whisper, 아니면 faster-whisper
+    dep = "mlx-whisper" if sys.platform == "darwin" else "faster-whisper"
     try:
-        p = subprocess.Popen([uv, "run", "--with", "mlx-whisper", str(LIVE_SCRIPT)],
+        p = subprocess.Popen([uv, "run", "--with", dep, str(LIVE_SCRIPT)],
                              cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, text=True, bufsize=1)
     except OSError:
