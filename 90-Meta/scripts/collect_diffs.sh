@@ -16,7 +16,11 @@ set -uo pipefail
 
 VAULT="$(cd "$(dirname "$0")/../.." && pwd)"
 REPOS_FILE="$VAULT/90-Meta/repos.md"
-DATE="${1:-$(date -v-1d +%F)}"
+yesterday() {
+  if date -v-1d +%F >/dev/null 2>&1; then date -v-1d +%F   # BSD/macOS
+  else date -d yesterday +%F; fi                             # GNU/Linux
+}
+DATE="${1:-$(yesterday)}"
 OUT_DIR="$VAULT/.cache/diffs"
 OUT="$OUT_DIR/$DATE.md"
 DEFAULT_MAX_DIFF=500

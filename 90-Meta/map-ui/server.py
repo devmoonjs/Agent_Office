@@ -2686,8 +2686,9 @@ def term_start(agent_key):
         if port is None:
             return {"error": "빈 포트를 찾지 못했습니다."}
         # -O(origin 검사)는 쓰지 않는다 — iframe 부모가 57910, ttyd가 다른 포트라 웹소켓이 막힌다.
-        # 대신 lo0 바인딩으로 외부 접근 자체를 차단한다.
-        args = [ttyd, "-p", str(port), "-i", "lo0", "-W",
+        # 대신 루프백 바인딩으로 외부 접근 자체를 차단한다.
+        loopback = "lo0" if sys.platform == "darwin" else "lo"
+        args = [ttyd, "-p", str(port), "-i", loopback, "-W",
                 "-t", "fontSize=13", "-t", "fontFamily=ui-monospace,SFMono-Regular,Menlo,monospace",
                 "-t", "disableLeaveAlert=true", "-t", "titleFixed=" + session,
                 "-t", 'theme={"background":"#0a0a0a","foreground":"#d6d6d6","cursor":"#d6d6d6","selectionBackground":"#33415a"}',
