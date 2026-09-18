@@ -59,6 +59,43 @@ SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist",
              "build", ".next", "target", ".obsidian", ".cache", ".omc",
              ".claudian", ".claude", ".idea", ".vscode"}
 
+# ── 설정 저장소 (.agent-office/) ─────────────────────────
+AOCFG_DIR = ROOT / ".agent-office"
+AOCFG_FILE = AOCFG_DIR / "config.json"
+AOPROJ_FILE = AOCFG_DIR / "projects.json"
+
+
+def ao_config():
+    """볼트 루트 .agent-office/config.json을 읽는다. 없으면 빈 dict."""
+    try:
+        return json.loads(AOCFG_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_ao_config(cfg):
+    AOCFG_DIR.mkdir(parents=True, exist_ok=True)
+    AOCFG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ao_projects():
+    """사용자가 UI에서 추가한 프로젝트 목록."""
+    try:
+        return json.loads(AOPROJ_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def save_ao_projects(prs):
+    AOCFG_DIR.mkdir(parents=True, exist_ok=True)
+    AOPROJ_FILE.write_text(json.dumps(prs, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def use_graph():
+    """Neo4j 그래프 기능 활성 여부. 기본 false."""
+    return bool(ao_config().get("useGraph", False))
+
+
 _lock = threading.Lock()
 _events = []          # [{id,ts,agent,text}]
 _next_id = 1
@@ -82,20 +119,35 @@ def emit(agent, text):
 
 
 def parse_repos():
-    """repos.md의 절대경로 줄을 파싱한다. 존재하는 디렉토리만 채택."""
+    """repos.md + .agent-office/projects.json의 절대경로를 병합한다. 존재하는 디렉토리만 채택. 경로 기준 dedupe."""
     out = []
+    seen = set()
+    # 1) repos.md (사용자 전용 파일 — 읽기만)
     try:
         txt = (ROOT / "90-Meta" / "repos.md").read_text(encoding="utf-8")
     except OSError:
-        return out
+        txt = ""
     for line in txt.splitlines():
         line = line.strip()
         if not line.startswith("/"):
             continue
         path = line.split("|")[0].split("#")[0].strip()
         p = Path(path)
-        if p.is_dir():
+        if p.is_dir() and str(p) not in seen:
+            seen.add(str(p))
             out.append(p)
+    # 2) .agent-office/projects.json (UI에서 추가한 프로젝트)
+    for pr in ao_projects():
+        path = pr.get("path", "")
+        if not path:
+            continue
+        p = Path(path)
+        if p.is_dir() and str(p) not in seen:
+            seen.add(str(p))
+            out.append(p)
+            # 표시명이 있으면 NAMES에도 등록
+            if pr.get("name"):
+                NAMES.setdefault(p.name, pr["name"])
     return out
 
 
@@ -507,12 +559,21 @@ CHAT_STYLE = """\n\n지금은 채팅 대화이므로 CLAUDE.md의 문서 스타�
 근거 파일은 (`경로`)로 조용히 표기한다. 모르는 것은 아는 척하지 않는다."""
 
 
-CONFIRM_BOT_PERSONA = (
+CONFIRM_BOT_PERSONA_GRAPH = (
     "너는 '관계 컨펌 봇'이다. 이 vault의 인물·조직·프로젝트·회의·액션아이템 지식그래프(Neo4j)를 담당한다. "
     "사용자의 질문은 90-Meta/neo4j/SCHEMA.md의 스키마에 맞춰 Cypher로 바꾸고 "
     "`bash 90-Meta/scripts/graph.sh query \"<cypher>\"`로 실행해 답한다. 이름 매칭이 안 되면 aliases 포함 검색으로 폴백한다. "
     "결과는 70-Activity/persons·projects 노트와 60-Sources/meetings 문서로 교차 보강하고, 근거(엣지 source·파일 경로)를 병기한다. "
     "Concept은 한글 별칭으로 부른다. 그래프 쓰기(적재·병합·삭제)는 절대 직접 하지 않는다 — 그것은 UI의 검토·적재 흐름이 담당한다.")
+CONFIRM_BOT_PERSONA_NOGRAPH = (
+    "너는 '관계 컨펌 봇'이다. 이 vault의 인물·조직·프로젝트·회의·문서를 관리한다. "
+    "현재 지식그래프(Neo4j)가 비활성 상태이므로 Cypher 질의는 사용하지 않는다. "
+    "70-Activity/persons·projects 노트와 60-Sources/meetings 문서를 검색해 답한다. "
+    "근거(파일 경로)를 병기한다. 그래프를 활성화하려면 설정에서 '지식 그래프 사용'을 켜야 한다.")
+
+
+def confirm_bot_persona():
+    return CONFIRM_BOT_PERSONA_GRAPH if use_graph() else CONFIRM_BOT_PERSONA_NOGRAPH
 
 
 def agent_chat_key_ok(key):
@@ -529,7 +590,7 @@ def agent_chat_file(key):
 
 def agent_persona(key):
     if key == "confirm-bot":
-        return CONFIRM_BOT_PERSONA + CHAT_STYLE
+        return confirm_bot_persona() + CHAT_STYLE
     if key == "meeting-recorder":
         return MEETING_PERSONA + CHAT_STYLE
     if key.startswith("proj:"):
@@ -2718,6 +2779,31 @@ def term_stop_all():
 atexit.register(term_stop_all)
 
 
+# ── 프로젝트 에이전트 정의 생성 ─────────────────────────
+def _create_agent_def(name, path_str, slug):
+    """UI에서 프로젝트를 추가할 때 .claude/agents/<slug>.md를 생성한다."""
+    agents_dir = ROOT / ".claude" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    af = agents_dir / f"{slug}.md"
+    if af.is_file():
+        return
+    af.write_text(f"""---
+name: {slug}
+description: "{name}" 프로젝트 전담 에이전트. 저장소 경로 {path_str} 의 코드와 git 이력을 분석하고 질문에 답한다.
+---
+
+# {name} 프로젝트 에이전트
+
+이 에이전트는 "{name}" 프로젝트를 담당한다.
+
+- 저장소 경로: `{path_str}`
+- `git -C '{path_str}' log/diff/show`로 이력을 조회한다
+- `15-Reports/{Path(path_str).name}/` 보고서와 `10-Daily` 노트를 근거로 답한다
+- 다른 프로젝트의 코드는 다루지 않는다
+- 코드 근거는 파일경로:라인으로 인용한다
+""", encoding="utf-8")
+
+
 # ── HTTP ──────────────────────────────────────────────
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -2832,6 +2918,17 @@ class H(BaseHTTPRequestHandler):
             self._json(agent_config_view(key))
         elif u.path == "/usage":
             self._json(get_usage())
+        elif u.path == "/api/config":
+            cfg = ao_config()
+            self._json({"transcribeModel": cfg.get("transcribeModel", "small"),
+                        "useGraph": cfg.get("useGraph", False)})
+        elif u.path == "/api/projects":
+            self._json({"projects": ao_projects()})
+        elif u.path == "/api/login-status":
+            # AI 계정 로그인 상태 — 자격 파일 존재 여부로 판정
+            claude_ok = (Path.home() / ".claude").is_dir() and any((Path.home() / ".claude").iterdir())
+            codex_ok = (Path.home() / ".codex").is_dir() or (Path.home() / ".config" / "codex").is_dir()
+            self._json({"claude": claude_ok, "codex": codex_ok})
         elif u.path == "/models":
             self._json({"models": [{"value": v, "label": l} for v, l in MODELS],
                         "current": current_model()})
@@ -3124,6 +3221,63 @@ class H(BaseHTTPRequestHandler):
                 return
             emit("system", "모델 변경 — " + MODEL_LABELS[m] + " (다음 실행부터 적용)")
             self._json({"ok": True, "model": m})
+            return
+        if path == "/api/config":
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                b = json.loads(self.rfile.read(n).decode())
+            except (ValueError, json.JSONDecodeError):
+                self.send_error(400)
+                return
+            cfg = ao_config()
+            if "transcribeModel" in b and b["transcribeModel"] in ("small", "medium"):
+                cfg["transcribeModel"] = b["transcribeModel"]
+            if "useGraph" in b:
+                cfg["useGraph"] = bool(b["useGraph"])
+            save_ao_config(cfg)
+            emit("system", "설정 변경 — " + ", ".join(f"{k}={v}" for k, v in b.items() if k in ("transcribeModel", "useGraph")))
+            self._json({"ok": True, **{k: cfg.get(k) for k in ("transcribeModel", "useGraph")}})
+            return
+        if path == "/api/projects":
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                b = json.loads(self.rfile.read(n).decode())
+                action = b.get("action", "")
+            except (ValueError, json.JSONDecodeError):
+                self.send_error(400)
+                return
+            if action == "add":
+                name = re.sub(r"[^\w가-힣 .\-]", "", (b.get("name") or "")).strip()[:60]
+                path_str = (b.get("path") or "").strip()
+                if not name or not path_str:
+                    self.send_error(400)
+                    return
+                prs = ao_projects()
+                # 경로 기준 dedupe
+                if not any(p.get("path") == path_str for p in prs):
+                    slug = re.sub(r"[^a-z0-9-]", "-", name.lower()).strip("-")[:40] or "project"
+                    prs.append({"name": name, "path": path_str, "slug": slug})
+                    save_ao_projects(prs)
+                    # 에이전트 정의 파일 생성
+                    _create_agent_def(name, path_str, slug)
+                    emit("system", f"프로젝트 추가 — {name} ({path_str})")
+                self._json({"ok": True, "projects": ao_projects()})
+            elif action == "delete":
+                path_str = (b.get("path") or "").strip()
+                prs = ao_projects()
+                removed = [p for p in prs if p.get("path") == path_str]
+                prs = [p for p in prs if p.get("path") != path_str]
+                save_ao_projects(prs)
+                # 생성했던 에이전트 파일 제거
+                for p in removed:
+                    slug = p.get("slug", "")
+                    af = ROOT / ".claude" / "agents" / f"{slug}.md"
+                    if af.is_file():
+                        af.unlink()
+                emit("system", f"프로젝트 제거 — {path_str}")
+                self._json({"ok": True, "projects": ao_projects()})
+            else:
+                self.send_error(400)
             return
         if path == "/run":
             try:
