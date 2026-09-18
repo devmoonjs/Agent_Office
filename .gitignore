@@ -2,8 +2,17 @@
 .cache/
 .omc/
 
-# 사용자별 설정 (전사 모델, 그래프 토글, UI 추가 프로젝트)
+# 사용자별 설정 (전사 모델, 그래프 토글, UI 추가 프로젝트, 에이전트 프롬프트·스케줄)
 .agent-office/
+
+# 감시 대상 repo 목록 — 사용자마다 다르다. repos.example.md 를 setup.sh 가 복사해 만든다.
+90-Meta/repos.md
+
+# 에이전트 프롬프트·스케줄 — UI가 자동으로 쓴다. 구버전 위치(추적 해제됨).
+90-Meta/map-ui/agent-config.json
+
+# CLAUDE.md 사용자 추가분 — 기본 규칙은 CLAUDE.md 가 계속 갱신된다.
+CLAUDE.local.md
 
 # Obsidian 설정 (workspace 등 상시 변경 노이즈)
 .obsidian/

@@ -1,0 +1,17 @@
+# 줄바꿈·인코딩 규칙
+
+* text=auto eol=lf
+
+# PowerShell 스크립트는 Windows PowerShell 5.1이 실행한다.
+# BOM 없는 UTF-8은 시스템 ANSI(한글 Windows = CP949)로 오독되어 한글 문자열이 깨지고
+# 파싱이 실패한다. 파일 자체를 UTF-8 BOM으로 저장하고, 체크아웃 시 CRLF를 강제한다.
+# (working-tree-encoding=UTF-8 은 쓰지 않는다 — git이 UTF-8 BOM을 금지 처리해 오류가 난다.)
+*.ps1 text eol=crlf
+
+# 셸 스크립트는 항상 LF
+*.sh text eol=lf
+
+# 바이너리
+*.png binary
+*.gif binary
+*.jpg binary

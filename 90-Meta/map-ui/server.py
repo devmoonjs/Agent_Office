@@ -711,9 +711,19 @@ SCHEDULE = [                                              # (시각 창 10분 �
     {"key": "proj-check", "job": "proj-check", "at": "09:50"},              # 매일 — 프로젝트별 일정·이슈·누락 점검
 ]
 # ── 에이전트 설정 오버라이드 (역할 프롬프트·루틴) — UI(⚙ 드로어)에서 편집, 파일로 영속 ──
-# 파일: 90-Meta/map-ui/agent-config.json  {"prompts": {agent: text}, "schedules": {key: {at,dow,enabled}}}
+# 파일: .agent-office/agent-config.json  {"prompts": {agent: text}, "schedules": {key: {at,dow,enabled}}}
 # 기본값은 위 AGENT_JOBS / SECRETARY_PERSONA / SCHEDULE 이며, 오버라이드는 기동 시와 저장 시 즉시 반영된다.
-AGENT_CONFIG = HERE / "agent-config.json"
+# 이 파일은 UI가 자동으로 쓴다. git 추적 대상이면 update 시 충돌하므로 gitignore된 .agent-office/ 에 둔다.
+# (구버전은 90-Meta/map-ui/agent-config.json 에 있었다 — setup.sh 가 이동시킨다.)
+AGENT_CONFIG = AOCFG_DIR / "agent-config.json"
+_LEGACY_AGENT_CONFIG = HERE / "agent-config.json"
+if not AGENT_CONFIG.is_file() and _LEGACY_AGENT_CONFIG.is_file():
+    try:
+        AOCFG_DIR.mkdir(exist_ok=True)
+        AGENT_CONFIG.write_bytes(_LEGACY_AGENT_CONFIG.read_bytes())
+        _LEGACY_AGENT_CONFIG.unlink()
+    except OSError:
+        AGENT_CONFIG = _LEGACY_AGENT_CONFIG
 DEFAULT_PROMPTS = {k: v.get("prompt", "") for k, v in AGENT_JOBS.items()}
 DEFAULT_PROMPTS["secretary"] = SECRETARY_PERSONA
 DEFAULT_SCHEDULE = [dict(x) for x in SCHEDULE]
@@ -2737,9 +2747,15 @@ def term_start(agent_key):
     """ttyd를 (필요하면) 띄우고 접속 정보를 돌려준다. 이미 살아 있으면 그대로 재사용한다."""
     ttyd = shutil.which("ttyd")
     if not ttyd:
-        return {"error": "ttyd가 설치돼 있지 않습니다 — `brew install ttyd` 후 다시 시도하세요."}
+        return {"error": "ttyd가 설치돼 있지 않습니다 — " + (
+            "`brew install ttyd`" if sys.platform == "darwin" else
+            '`sudo curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/'
+            'ttyd.$(uname -m)" -o /usr/local/bin/ttyd && sudo chmod +x /usr/local/bin/ttyd`'
+        ) + " 후 다시 시도하세요."}
     if not shutil.which("tmux"):
-        return {"error": "tmux가 설치돼 있지 않습니다 — `brew install tmux` 후 다시 시도하세요."}
+        return {"error": "tmux가 설치돼 있지 않습니다 — " + (
+            "`brew install tmux`" if sys.platform == "darwin" else "`sudo apt install -y tmux`"
+        ) + " 후 다시 시도하세요."}
     session, cwd = term_target(agent_key)
     with _terms_lock:
         t = _terms.get(agent_key)
@@ -2750,19 +2766,33 @@ def term_start(agent_key):
             return {"error": "빈 포트를 찾지 못했습니다."}
         # -O(origin 검사)는 쓰지 않는다 — iframe 부모가 57910, ttyd가 다른 포트라 웹소켓이 막힌다.
         # 대신 루프백 바인딩으로 외부 접근 자체를 차단한다.
-        loopback = "lo0" if sys.platform == "darwin" else "lo"
+        # 인터페이스 이름이 아니라 IP를 넘긴다. WSL2에는 lo(127.0.0.1) 외에
+        # loopback0(10.255.255.254)이 있어서 libwebsockets가 "lo"를 loopback0에 매칭한다.
+        # 그러면 ttyd가 10.255.255.254에 붙어 윈도우 브라우저에서 접속할 수 없다.
+        loopback = "lo0" if sys.platform == "darwin" else "127.0.0.1"
         args = [ttyd, "-p", str(port), "-i", loopback, "-W",
                 "-t", "fontSize=13", "-t", "fontFamily=ui-monospace,SFMono-Regular,Menlo,monospace",
                 "-t", "disableLeaveAlert=true", "-t", "titleFixed=" + session,
                 "-t", 'theme={"background":"#0a0a0a","foreground":"#d6d6d6","cursor":"#d6d6d6","selectionBackground":"#33415a"}',
                 "tmux", "new-session", "-A", "-s", session, "-c", str(cwd)]
         try:
-            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    stdin=subprocess.DEVNULL)
+            # stderr를 버리지 않는다 — 바인딩 실패 같은 기동 오류를 사용자에게 보여야 한다.
+            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                    stdin=subprocess.DEVNULL, text=True)
         except OSError as e:
             return {"error": f"ttyd 실행 실패: {e}"}
         _terms[agent_key] = {"port": port, "proc": proc, "session": session, "cwd": str(cwd)}
-    time.sleep(0.35)     # ttyd가 리슨을 열 때까지 — iframe이 먼저 붙으면 빈 화면이 된다
+    time.sleep(0.4)      # ttyd가 리슨을 열 때까지 — iframe이 먼저 붙으면 빈 화면이 된다
+    if proc.poll() is not None:
+        # 떴다가 즉시 죽었다. URL을 돌려주면 UI가 빈 화면을 띄우므로 여기서 걸러낸다.
+        err = ""
+        try:
+            err = (proc.stderr.read() or "").strip()[:300]
+        except (OSError, ValueError):
+            pass
+        with _terms_lock:
+            _terms.pop(agent_key, None)
+        return {"error": f"ttyd가 기동 직후 종료했습니다 (exit {proc.returncode}). {err}"}
     # 로그인 전용 세션 — 열자마자 로그인 명령을 보낸다
     if agent_key == "login-claude":
         subprocess.Popen(["tmux", "send-keys", "-t", session, "claude", "Enter"],
@@ -2809,6 +2839,58 @@ description: "{name}" 프로젝트 전담 에이전트. 저장소 경로 {path_s
 - 다른 프로젝트의 코드는 다루지 않는다
 - 코드 근거는 파일경로:라인으로 인용한다
 """, encoding="utf-8")
+
+
+
+# ── 업데이트 (설정 화면의 [업데이트] 버튼) ─────────────
+# 버전 판정과 pull은 update.sh가 전담한다. 여기서는 그 JSON을 중계만 한다 —
+# git 로직을 두 곳에 두면 터미널과 UI의 동작이 갈라진다.
+UPDATE_SH = ROOT / "update.sh"
+_update_cache = {"ts": 0, "data": None}
+
+
+def update_status(force_fetch=False):
+    """update.sh --check 결과. 네트워크를 타므로 10분 캐시한다."""
+    now = time.time()
+    if not force_fetch and _update_cache["data"] and now - _update_cache["ts"] < 600:
+        return _update_cache["data"]
+    if not UPDATE_SH.is_file():
+        return {"ok": False, "error": "update.sh가 없습니다 — 구버전 설치입니다"}
+    try:
+        r = subprocess.run(["bash", str(UPDATE_SH), "--check"],
+                           cwd=ROOT, capture_output=True, text=True, timeout=60)
+        data = json.loads((r.stdout or "").strip().splitlines()[-1])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError) as e:
+        return {"ok": False, "error": f"버전 확인 실패: {str(e)[:120]}"}
+    _update_cache.update(ts=now, data=data)
+    return data
+
+
+def update_apply(force=False):
+    """update.sh 실행 → 성공하면 서버를 재기동한다(새 코드를 메모리에 올리기 위해)."""
+    if not UPDATE_SH.is_file():
+        return {"ok": False, "error": "update.sh가 없습니다 — 구버전 설치입니다"}
+    args = ["bash", str(UPDATE_SH)] + (["--force"] if force else [])
+    try:
+        r = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=600)
+        data = json.loads((r.stdout or "").strip().splitlines()[-1])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError) as e:
+        return {"ok": False, "error": f"업데이트 실패: {str(e)[:200]}"}
+    _update_cache.update(ts=0, data=None)
+    if data.get("ok") and data.get("message", "").startswith("업데이트 완료"):
+        emit("system", "업데이트 완료 — 서버를 재시작합니다")
+        # 응답을 먼저 보내고 재시작한다. 브라우저는 폴링이 끊겼다가 다시 붙는다.
+        threading.Timer(1.5, _restart_self).start()
+        data["restarting"] = True
+    return data
+
+
+def _restart_self():
+    term_stop_all()
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except OSError:
+        os._exit(1)
 
 
 # ── HTTP ──────────────────────────────────────────────
@@ -2925,6 +3007,8 @@ class H(BaseHTTPRequestHandler):
             self._json(agent_config_view(key))
         elif u.path == "/usage":
             self._json(get_usage())
+        elif u.path == "/api/version":
+            self._json(update_status(parse_qs(u.query).get("refresh", [""])[0] == "1"))
         elif u.path == "/api/config":
             cfg = ao_config()
             self._json({"transcribeModel": cfg.get("transcribeModel", "small"),
@@ -3228,6 +3312,14 @@ class H(BaseHTTPRequestHandler):
                 return
             emit("system", "모델 변경 — " + MODEL_LABELS[m] + " (다음 실행부터 적용)")
             self._json({"ok": True, "model": m})
+            return
+        if path == "/api/update":
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                b = json.loads(self.rfile.read(n).decode()) if n else {}
+            except (ValueError, json.JSONDecodeError):
+                b = {}
+            self._json(update_apply(force=bool(b.get("force"))))
             return
         if path == "/api/config":
             try:
