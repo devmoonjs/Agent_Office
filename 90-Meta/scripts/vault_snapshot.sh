@@ -11,7 +11,11 @@
 set -euo pipefail
 
 VAULT="$(cd "$(dirname "$0")/../.." && pwd)"
-DATE="${1:-$(date -v-1d +%F)}"
+yesterday() {
+  if date -v-1d +%F >/dev/null 2>&1; then date -v-1d +%F   # BSD/macOS
+  else date -d yesterday +%F; fi                             # GNU/Linux
+}
+DATE="${1:-$(yesterday)}"
 
 cd "$VAULT"
 [ -d .git ] || { echo "오류: vault가 git repo가 아님" >&2; exit 1; }

@@ -91,14 +91,46 @@ python3 90-Meta/map-ui/server.py    # http://127.0.0.1:57910
 - `90-Meta/.env` — `.env.example`를 복사해 토큰을 채운다. git에 올라가지 않는다.
 - `CLAUDE.md` — 에이전트 운영 규칙. 자신의 문서 규칙에 맞게 고쳐 쓴다.
 
+## 윈도우 설치 (WSL2)
+
+네이티브 윈도우는 지원하지 않는다. WSL2 Ubuntu 안에서 클론한다.
+
+### 자동 설치 (관리자 PowerShell)
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process; .\install.ps1
+```
+
+WSL2 설치 확인 → Ubuntu 패키지 → Node.js → Claude Code → 레포 클론 → 서버 기동을
+순서대로 처리한다. 재실행해도 안전하다.
+
+### 수동 설치 (Ubuntu 터미널)
+
+```bash
+sudo apt update && sudo apt install -y git python3 python3-pip tmux ttyd pandoc ffmpeg
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt install -y nodejs
+sudo npm install -g @anthropic-ai/claude-code && claude      # 로그인
+git clone https://github.com/devmoonjs/Agent_Office.git && cd Agent_Office
+bash setup.sh
+python3 90-Meta/map-ui/server.py    # 윈도우 브라우저에서 http://127.0.0.1:57910
+```
+
+### 반드시 지킬 것
+
+- **분석 대상 repo는 WSL 안에 클론한다.** `/mnt/c/...` 경로는 git diff가 느리고 파일 감시가 안 된다
+- **스케줄러**: launchd 대신 cron. 재부팅 시 `wsl -d Ubuntu -- true`를 작업 스케줄러에 등록하거나 `/etc/wsl.conf`의 `[boot] systemd=true`로 cron을 살린다
+- **회의 전사**: faster-whisper(CPU)로 자동 폴백. GPU 없으면 1시간 녹음에 10분 이상
+
+상세 절차, 문제 해결, 미검증 항목은 [`docs/WINDOWS.md`](docs/WINDOWS.md) 참조.
+
 ## 요구 사항
 
 - **Claude Code 또는 codex CLI** — 스킬 실행과 데스크 에이전트 구동에 필요
 - **Python 3** — map-ui, 동기화 스크립트. 관제 UI 표출 자체는 Python 3만으로 된다
 - **Docker** — Neo4j 그래프 옵션에만. **Neo4j 없이도 UI·스킬 대부분은 동작한다**
-  (`/graph` 스킬과 위 5·6번 화면만 보류됨)
-- **회의 녹음/전사** — mlx-whisper(Apple Silicon 로컬 전사). 없으면 녹음·업로드까지만 된다
-- macOS가 아니면 `/ingest`의 docx 변환을 `textutil` → pandoc으로 교체해야 한다
+  (`/graph` 스킬과 위 5·6번 화면만 보류됨). 설정에서 그래프를 비활성(기본)으로 두면 관련 지시가 아예 삽입되지 않는다
+- **회의 녹음/전사** — macOS(Apple Silicon): mlx-whisper, Linux/WSL: faster-whisper로 자동 폴백. 설정에서 전사 모델(small/medium)을 선택할 수 있다
+- **docx 변환** — macOS: `textutil`(내장), Linux: `pandoc`(`apt install pandoc`)
 
 ## 주의
 

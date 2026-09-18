@@ -1342,17 +1342,42 @@ function openCasting(){if(!CASTCAT)return loadCast().then(openCasting);
     var k=ORDER.filter(function(x){return AG[x].kind==='biz'&&AG[x].name===n})[0];if(k){open(k);toggleDrawer(true)}})})}
  draw()}
 
-// 설정 — 모델 · 사용량 · 봇
+// 설정 — 모델 · 전사 · 로그인 · 그래프 · 프로젝트
+var _sh3='style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);margin:0 0 6px"';
 $('btn-settings').addEventListener('click',function(){
- Promise.all([fetch('/models',{cache:'no-store'}).then(function(r){return r.json()}),fetch('/usage',{cache:'no-store'}).then(function(r){return r.json()})]).then(function(rs){var m=rs[0],u=rs[1];
+ Promise.all([fetch('/models',{cache:'no-store'}).then(function(r){return r.json()}),fetch('/usage',{cache:'no-store'}).then(function(r){return r.json()}),fetch('/api/config',{cache:'no-store'}).then(function(r){return r.json()}),fetch('/api/login-status',{cache:'no-store'}).then(function(r){return r.json()}),fetch('/api/projects',{cache:'no-store'}).then(function(r){return r.json()})]).then(function(rs){var m=rs[0],u=rs[1],cfg=rs[2],login=rs[3],pj=rs[4];
+  var txm=cfg.transcribeModel||'small';
   showModal('<div class="mh"><h2>설정</h2><button class="x">✕</button></div>'+
-   '<div><h3 style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);margin:0 0 6px">Claude 모델 — 다음 실행부터 적용</h3><select id="m-model" style="width:100%;background:var(--chip);color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit">'+
+   '<div><h3 '+_sh3+'>Claude 모델 — 다음 실행부터 적용</h3><select id="m-model" style="width:100%;background:var(--chip);color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit">'+
    (m.models||[]).map(function(x){return '<option value="'+esc(x.value)+'"'+(x.value===m.current?' selected':'')+'>'+esc(x.label)+'</option>'}).join('')+'</select></div>'+
-   '<div><h3 style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);margin:0 0 6px">테마</h3><div class="chips" id="m-theme"><button class="chip" data-t="">OS 설정 따름</button><button class="chip" data-t="light">라이트</button><button class="chip" data-t="dark">다크</button></div></div>'+
-   '<div><h3 style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);margin:0 0 6px">사용량</h3><p>5시간 창 '+(u.pct==null?'—':u.pct+'%')+' · 주간 '+(u.weekly==null?'—':u.weekly+'%')+(u.updated?' · '+esc(u.updated)+' 기준':'')+'</p></div>'+
-   '<div><h3 style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);margin:0 0 6px">연결</h3><p>텔레그램 봇 '+(botOn?'실행 중':'꺼짐')+' · 워처 5초 · <a href="/legacy" style="color:var(--tx2)">이전 UI 열기</a></p></div>');
+   '<div><h3 '+_sh3+'>테마</h3><div class="chips" id="m-theme"><button class="chip" data-t="">OS 설정 따름</button><button class="chip" data-t="light">라이트</button><button class="chip" data-t="dark">다크</button></div></div>'+
+   '<div><h3 '+_sh3+'>전사 품질</h3><div class="chips" id="m-tx"><button class="chip" data-v="small">빠름 (small)</button><button class="chip" data-v="medium">정확 (medium)</button></div></div>'+
+   '<div><h3 '+_sh3+'>AI 계정 로그인</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+   '<button class="chip" id="m-login-claude">Claude '+(login.claude?'<span style="color:var(--ok)">연결됨</span>':'<span style="color:var(--tx3)">미연결</span>')+'</button>'+
+   '<button class="chip" id="m-login-codex">Codex '+(login.codex?'<span style="color:var(--ok)">연결됨</span>':'<span style="color:var(--tx3)">미연결</span>')+'</button>'+
+   '</div><p style="margin:6px 0 0;font-size:11px;color:var(--tx3)">클릭하면 터미널 탭에서 로그인 흐름이 열린다</p></div>'+
+   '<div><h3 '+_sh3+'>지식 그래프 (Neo4j)</h3><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-graph"'+(cfg.useGraph?' checked':'')+' style="width:16px;height:16px"><span style="font-size:13px;color:var(--tx)">지식 그래프 사용</span></label><p style="margin:4px 0 0;font-size:11px;color:var(--tx3)">Neo4j + Docker 필요. 비활성이면 그래프 관련 기능이 꺼진다</p></div>'+
+   '<div><h3 '+_sh3+'>관리 프로젝트</h3><div id="m-plist"></div>'+
+   '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><input id="m-pname" class="mr-in" placeholder="프로젝트 이름" style="flex:1;min-width:120px"><input id="m-ppath" class="mr-in" placeholder="로컬 절대 경로 (/home/...)" style="flex:2;min-width:200px"><button class="chip" id="m-padd" style="font-weight:600">추가</button></div>'+
+   '<p style="margin:4px 0 0;font-size:11px;color:var(--tx3)">repos.md 항목은 여기서 수정하지 않는다 (사용자 전용 파일)</p></div>'+
+   '<div><h3 '+_sh3+'>사용량</h3><p>5시간 창 '+(u.pct==null?'—':u.pct+'%')+' · 주간 '+(u.weekly==null?'—':u.weekly+'%')+(u.updated?' · '+esc(u.updated)+' 기준':'')+'</p></div>'+
+   '<div><h3 '+_sh3+'>연결</h3><p>텔레그램 봇 '+(botOn?'실행 중':'꺼짐')+' · 워처 5초 · <a href="/legacy" style="color:var(--tx2)">이전 UI 열기</a></p></div>');
+  // 테마 칩
   (function(){var saved='';try{saved=localStorage.getItem('theme')||''}catch(e){}$('m-theme').querySelectorAll('.chip').forEach(function(b){b.setAttribute('aria-selected',String(b.dataset.t===saved));b.addEventListener('click',function(){setTheme(b.dataset.t||null);$('m-theme').querySelectorAll('.chip').forEach(function(x){x.setAttribute('aria-selected',String(x===b))})})})})();
-  $('m-model').addEventListener('change',function(){post('/model',{model:$('m-model').value}).then(updateMe).catch(function(){alert('모델 변경 실패 — 서버 로그를 확인하십시오')})})}).catch(function(){})});
+  // 모델 변경
+  $('m-model').addEventListener('change',function(){post('/model',{model:$('m-model').value}).then(updateMe).catch(function(){alert('모델 변경 실패')})});
+  // 전사 품질 칩
+  $('m-tx').querySelectorAll('.chip').forEach(function(b){b.setAttribute('aria-selected',String(b.dataset.v===txm));b.addEventListener('click',function(){post('/api/config',{transcribeModel:b.dataset.v}).then(function(){$('m-tx').querySelectorAll('.chip').forEach(function(x){x.setAttribute('aria-selected',String(x===b))})})})});
+  // AI 로그인 버튼 — 터미널 탭을 열어 로그인 명령 실행
+  $('m-login-claude').addEventListener('click',function(){post('/term/start',{agent:'login-claude'}).then(function(r){if(r.url)window.open(r.url,'_blank')})});
+  $('m-login-codex').addEventListener('click',function(){post('/term/start',{agent:'login-codex'}).then(function(r){if(r.url)window.open(r.url,'_blank')})});
+  // 그래프 토글
+  $('m-graph').addEventListener('change',function(){post('/api/config',{useGraph:$('m-graph').checked})});
+  // 프로젝트 목록 렌더 + 추가/삭제
+  function renderPList(list){var el=$('m-plist');if(!el)return;if(!list.length){el.innerHTML='<p style="color:var(--tx3);font-size:12px">UI에서 추가한 프로젝트 없음</p>';return}el.innerHTML=list.map(function(p){return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.name)+'</span><span style="font:11px var(--mono);color:var(--tx3);flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left">'+esc(p.path)+'</span><button class="chip" data-dp="'+esc(p.path)+'" style="color:var(--bad);flex:none">삭제</button></div>'}).join('');el.querySelectorAll('[data-dp]').forEach(function(b){b.addEventListener('click',function(){post('/api/projects',{action:'delete',path:b.dataset.dp}).then(function(r){renderPList(r.projects||[])})})})}
+  renderPList((pj.projects||[]));
+  $('m-padd').addEventListener('click',function(){var n=$('m-pname').value.trim(),p=$('m-ppath').value.trim();if(!n||!p)return;post('/api/projects',{action:'add',name:n,path:p}).then(function(r){renderPList(r.projects||[]);$('m-pname').value='';$('m-ppath').value=''})})
+ }).catch(function(){})});
 function updateMe(){Promise.all([fetch('/models',{cache:'no-store'}).then(function(r){return r.json()}),fetch('/usage',{cache:'no-store'}).then(function(r){return r.json()})]).then(function(rs){
  var cur=(rs[0].models||[]).filter(function(x){return x.value===rs[0].current})[0];
  $('me-sub').textContent=(cur?cur.label:'모델 —')+' · 5h '+(rs[1].pct==null?'—':rs[1].pct+'%')}).catch(function(){})}

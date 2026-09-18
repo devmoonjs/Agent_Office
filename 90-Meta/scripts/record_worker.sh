@@ -14,7 +14,37 @@ set -euo pipefail
 VAULT="$(cd "$(dirname "$0")/../.." && pwd)"
 REC="$VAULT/00-Inbox/recordings"
 UVX="$(command -v uvx || echo "$HOME/anaconda3/bin/uvx")"
-MODEL="mlx-community/whisper-large-v3-turbo"
+SCRIPTS="$VAULT/90-Meta/scripts"
+CONFIG="$VAULT/.agent-office/config.json"
+
+# 전사 모델 결정: 환경변수 > config.json > 기본값(small)
+if [ -n "${TRANSCRIBE_MODEL:-}" ]; then
+  TX_MODEL="$TRANSCRIBE_MODEL"
+elif [ -f "$CONFIG" ]; then
+  TX_MODEL="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('transcribeModel','small'))" "$CONFIG" 2>/dev/null || echo small)"
+else
+  TX_MODEL="small"
+fi
+
+# Apple Silicon이면 mlx-whisper, 아니면 faster-whisper 폴백
+IS_MLX=false
+if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+  IS_MLX=true
+fi
+
+# mlx-whisper 모델명 매핑
+if [ "$IS_MLX" = true ]; then
+  case "$TX_MODEL" in
+    tiny|base|small|medium|large|large-v2|large-v3)
+      MLX_MODEL="mlx-community/whisper-$TX_MODEL" ;;
+    large-v3-turbo)
+      MLX_MODEL="mlx-community/whisper-large-v3-turbo" ;;
+    *)
+      MLX_MODEL="mlx-community/whisper-$TX_MODEL" ;;
+  esac
+else
+  MLX_MODEL=""
+fi
 
 [ -d "$REC" ] || { echo "녹음 폴더 없음: $REC"; exit 0; }
 
@@ -36,9 +66,16 @@ transcribe() {
   else
     # --verbose True: 세그먼트마다 "[00:03:12.000 --> ...] 텍스트"를 stdout에 흘린다.
     # 서버(meeting_pipeline._transcribe)가 이 타임스탬프를 녹음 길이로 나눠 진행률(%)을 만든다.
-    PYTHONUNBUFFERED=1 "$UVX" --from mlx-whisper mlx_whisper "$audio" \
-      --model "$MODEL" --language ko --condition-on-previous-text False \
-      --output-dir "$tmp" --output-format srt --verbose True
+    if [ "$IS_MLX" = true ]; then
+      PYTHONUNBUFFERED=1 "$UVX" --from mlx-whisper mlx_whisper "$audio" \
+        --model "$MLX_MODEL" --language ko --condition-on-previous-text False \
+        --output-dir "$tmp" --output-format srt --verbose True
+    else
+      # faster-whisper 폴백 (Linux/WSL) — transcribe_fw.py가 mlx-whisper와 동일한
+      # 세그먼트 형식을 stdout에 출력하므로 서버의 진행률 파싱이 그대로 동작한다.
+      PYTHONUNBUFFERED=1 "$UVX" --with faster-whisper python3 "$SCRIPTS/transcribe_fw.py" \
+        "$audio" --model "$TX_MODEL" --language ko --output-dir "$tmp"
+    fi
   fi
 
   local srt

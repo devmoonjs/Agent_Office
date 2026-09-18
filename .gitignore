@@ -2,6 +2,9 @@
 .cache/
 .omc/
 
+# 사용자별 설정 (전사 모델, 그래프 토글, UI 추가 프로젝트)
+.agent-office/
+
 # Obsidian 설정 (workspace 등 상시 변경 노이즈)
 .obsidian/
 
