@@ -7,10 +7,29 @@
 관리자 PowerShell에서 한 줄로 실행한다.
 
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process; .\install.ps1
+irm https://raw.githubusercontent.com/devmoonjs/Agent_Office/main/install.ps1 | iex
 ```
 
-스크립트가 WSL2 설치 여부를 확인하고, Ubuntu 패키지·Node.js·Claude Code·레포 클론·서버 기동까지 순서대로 처리한다. 재실행해도 안전하다.
+WSL2 확인 → Ubuntu 패키지 → Claude Code → 클론 → 설치 점검 → 서버 기동 순으로 처리한다. 재실행해도 안전하며, 이미 끝난 단계는 건너뛴다.
+
+WSL2가 없으면 1단계에서 설치만 하고 멈춘다. 재부팅한 뒤:
+
+1. 시작 메뉴에서 **Ubuntu**를 열어 사용자명과 비밀번호를 만든다 (비밀번호는 입력해도 화면에 보이지 않는다)
+2. 같은 명령을 다시 실행한다 — 2단계부터 이어진다
+
+### 파일로 받아 실행하려면
+
+`.ps1`은 **UTF-8 BOM**으로 저장돼야 한다. BOM이 없으면 Windows PowerShell 5.1이 시스템 ANSI(한글 Windows는 CP949)로 읽어 한글 문자열이 깨지고 파싱이 실패한다. 이 저장소의 `install.ps1`은 BOM과 CRLF로 관리되지만, 브라우저나 편집기를 거치면 유실될 수 있다.
+
+```powershell
+$u = 'https://raw.githubusercontent.com/devmoonjs/Agent_Office/main/install.ps1'
+$p = "$env:USERPROFILE\Downloads\install.ps1"
+[IO.File]::WriteAllText($p, (irm $u), [Text.UTF8Encoding]::new($true))
+Set-ExecutionPolicy Bypass -Scope Process -Force
+& $p
+```
+
+`irm | iex` 방식은 HTTP 응답의 charset으로 디코딩하므로 이 문제가 없다.
 
 ## 수동 설치
 
@@ -40,20 +59,25 @@ sudo apt update && sudo apt install -y git python3 python3-pip tmux ttyd pandoc 
 sudo snap install ttyd --classic
 ```
 
-### 3단계: Node.js + Claude Code
+### 3단계: Claude Code
+
+Node.js는 필요 없다. 공식 설치 스크립트가 `~/.local/bin`에 바이너리를 넣는다.
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install -g @anthropic-ai/claude-code
+curl -fsSL https://claude.ai/install.sh | bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 claude    # 브라우저 로그인
 ```
+
+`sudo`를 붙이면 안 된다. 설치 스크립트가 거부한다 — `$HOME`이 root로 잡혀 바이너리가 `/root/.local/bin`에 들어가기 때문이다.
+
+npm 전역 설치(`sudo npm install -g @anthropic-ai/claude-code`)는 권장하지 않는다. npm 11.19부터 install script를 기본 차단해 `postinstall: node install.cjs`가 실행되지 않고 반쪽 설치가 된다. 굳이 npm을 쓴다면 `--allow-scripts=@anthropic-ai/claude-code`를 붙인다.
 
 ### 4단계: 클론 및 기동
 
 ```bash
-git clone https://github.com/devmoonjs/Agent_Office.git
-cd Agent_Office
+git clone https://github.com/devmoonjs/Agent_Office.git ~/Agent_Office
+cd ~/Agent_Office
 bash setup.sh
 python3 90-Meta/map-ui/server.py
 ```
@@ -61,6 +85,20 @@ python3 90-Meta/map-ui/server.py
 윈도우 브라우저에서 `http://127.0.0.1:57910` 을 연다.
 
 <!-- 스크린샷: Agent Office 메인 화면 -->
+
+## 업데이트
+
+설정 화면(왼쪽 아래 ⚙) > **버전** 절에서 새 변경이 있으면 `[업데이트]` 버튼이 나온다. 내려받고 의존성을 점검한 뒤 서버까지 재시작한다.
+
+터미널에서:
+
+```bash
+cd ~/Agent_Office
+bash update.sh --check    # 상태만 조회
+bash update.sh            # 업데이트
+```
+
+사용자 파일(`90-Meta/repos.md`, `90-Meta/.env`, `.agent-office/`, 볼트 노트)은 git 추적 대상이 아니므로 업데이트가 덮어쓰지 않는다. 추적 파일을 직접 고쳤다면 업데이트가 중단되고, `[강제 업데이트]`를 쓰면 `.agent-office/backup/<날짜>/`에 백업한 뒤 덮어쓴다.
 
 ## 반드시 지킬 것
 
@@ -97,16 +135,25 @@ docker compose up -d
 
 윈도우 10 버전 2004 이상이 필요하다. `winver`로 확인한다. 버전이 낮으면 Windows Update를 먼저 실행한다.
 
-### ttyd를 찾을 수 없다
+### ttyd를 찾을 수 없다 / 터미널 탭이 안 뜬다
+
+WSL에서 snap은 기본적으로 동작하지 않는다. 공식 릴리스의 정적 바이너리를 받는다. 저장소는 `tsl0922/ttyd`다.
 
 ```bash
-# snap 경로 확인
-which ttyd || snap list ttyd
-
-# 직접 다운로드
-sudo curl -fsSL "https://github.com/nicm/ttyd/releases/latest/download/ttyd.$(uname -m)" -o /usr/local/bin/ttyd
+sudo curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.$(uname -m)" -o /usr/local/bin/ttyd
 sudo chmod +x /usr/local/bin/ttyd
+ttyd --version
 ```
+
+설치돼 있는데도 터미널이 빈 화면이면 바인딩 주소를 확인한다.
+
+```bash
+ss -tlnp | grep ttyd
+```
+
+`127.0.0.1:579xx`가 정상이다. `10.255.255.254`로 나오면 구버전이다 — WSL2에는 `lo`(127.0.0.1) 외에 `loopback0`(10.255.255.254)이 있어서 ttyd가 인터페이스 이름 `lo`를 `loopback0`에 잘못 매칭한 것이다. 설정 화면의 업데이트로 해결된다.
+
+버튼을 눌러도 아무 반응이 없으면 브라우저의 팝업 차단을 확인한다.
 
 ### 서버가 뜨지만 브라우저에서 접속이 안 된다
 

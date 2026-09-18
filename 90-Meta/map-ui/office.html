@@ -1342,6 +1342,40 @@ function openCasting(){if(!CASTCAT)return loadCast().then(openCasting);
     var k=ORDER.filter(function(x){return AG[x].kind==='biz'&&AG[x].name===n})[0];if(k){open(k);toggleDrawer(true)}})})}
  draw()}
 
+// 버전 · 업데이트 — update.sh 의 JSON을 그대로 그린다
+function renderVersion(refresh){var el=$('m-ver');if(!el)return;
+ if(refresh)el.innerHTML='<p style="color:var(--tx3)">원격 확인 중…</p>';
+ fetch('/api/version'+(refresh?'?refresh=1':''),{cache:'no-store'}).then(function(r){return r.json()}).then(function(v){
+  var el=$('m-ver');if(!el)return;
+  if(!v.ok&&v.error){el.innerHTML='<p style="color:var(--tx3)">'+esc(v.error)+'</p>';return}
+  var head='<p>'+esc(v.current||'?')+(v.current_date?' · '+esc(v.current_date):'')+'</p>';
+  if(!v.behind||v.behind===0){
+   el.innerHTML=head+'<p style="font-size:11px;color:var(--tx3)">최신 상태입니다 · '
+    +'<a href="#" id="m-ver-refresh" style="color:var(--tx2)">다시 확인</a></p>';
+  }else{
+   var warn=v.dirty?'<p style="font-size:11px;color:var(--warn,#e0a03e);margin:4px 0 0">로컬 수정이 있습니다: '
+     +esc(v.dirty)+'<br>강제 업데이트는 .agent-office/backup/ 에 백업한 뒤 덮어씁니다.</p>':'';
+   el.innerHTML=head+'<p style="font-size:11px;color:var(--tx3)">새 변경 '+v.behind+'건이 있습니다</p>'+warn
+    +'<div style="display:flex;gap:6px;margin-top:8px"><button class="chip" id="m-ver-up" style="font-weight:600">업데이트</button>'
+    +(v.dirty?'<button class="chip" id="m-ver-force">강제 업데이트</button>':'')
+    +'<button class="chip" id="m-ver-refresh2">다시 확인</button></div>';
+  }
+  var rf=$('m-ver-refresh')||$('m-ver-refresh2');
+  if(rf)rf.addEventListener('click',function(e){e.preventDefault();renderVersion(true)});
+  function doUpdate(force){var el=$('m-ver');
+   el.innerHTML='<p style="color:var(--tx3)">업데이트 중… 서버가 재시작되면 화면이 잠시 멈춥니다.</p>';
+   post('/api/update',force?{force:1}:{}).then(function(r){
+    var el=$('m-ver');if(!el)return;
+    if(r.restarting){el.innerHTML='<p style="color:var(--ok)">업데이트 완료. 서버 재시작 중 — 5초 뒤 새로고침합니다.</p>';
+     setTimeout(function(){location.reload()},5000);return}
+    if(!r.ok){el.innerHTML='<p style="color:var(--tx3)">'+esc(r.error||'업데이트 실패')+'</p>';return}
+    el.innerHTML='<p>'+esc(r.message||'완료')+'</p>'})
+   .catch(function(){var el=$('m-ver');if(el)el.innerHTML='<p style="color:var(--tx3)">업데이트 요청 실패 — 터미널에서 bash update.sh 를 실행해 주세요.</p>'})}
+  if($('m-ver-up'))$('m-ver-up').addEventListener('click',function(){doUpdate(false)});
+  if($('m-ver-force'))$('m-ver-force').addEventListener('click',function(){
+   if(confirm('로컬 수정을 백업한 뒤 덮어씁니다. 계속할까요?'))doUpdate(true)});
+ }).catch(function(){var el=$('m-ver');if(el)el.innerHTML='<p style="color:var(--tx3)">버전 확인 실패</p>'})}
+
 // 설정 — 모델 · 전사 · 로그인 · 그래프 · 프로젝트
 var _sh3='style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);margin:0 0 6px"';
 $('btn-settings').addEventListener('click',function(){
@@ -1361,7 +1395,9 @@ $('btn-settings').addEventListener('click',function(){
    '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><input id="m-pname" class="mr-in" placeholder="프로젝트 이름" style="flex:1;min-width:120px"><input id="m-ppath" class="mr-in" placeholder="로컬 절대 경로 (/home/...)" style="flex:2;min-width:200px"><button class="chip" id="m-padd" style="font-weight:600">추가</button></div>'+
    '<p style="margin:4px 0 0;font-size:11px;color:var(--tx3)">repos.md 항목은 여기서 수정하지 않는다 (사용자 전용 파일)</p></div>'+
    '<div><h3 '+_sh3+'>사용량</h3><p>5시간 창 '+(u.pct==null?'—':u.pct+'%')+' · 주간 '+(u.weekly==null?'—':u.weekly+'%')+(u.updated?' · '+esc(u.updated)+' 기준':'')+'</p></div>'+
+   '<div><h3 '+_sh3+'>버전</h3><div id="m-ver"><p style="color:var(--tx3)">확인 중…</p></div></div>'+
    '<div><h3 '+_sh3+'>연결</h3><p>텔레그램 봇 '+(botOn?'실행 중':'꺼짐')+' · 워처 5초 · <a href="/legacy" style="color:var(--tx2)">이전 UI 열기</a></p></div>');
+  renderVersion();
   // 테마 칩
   (function(){var saved='';try{saved=localStorage.getItem('theme')||''}catch(e){}$('m-theme').querySelectorAll('.chip').forEach(function(b){b.setAttribute('aria-selected',String(b.dataset.t===saved));b.addEventListener('click',function(){setTheme(b.dataset.t||null);$('m-theme').querySelectorAll('.chip').forEach(function(x){x.setAttribute('aria-selected',String(x===b))})})})})();
   // 모델 변경
@@ -1369,8 +1405,14 @@ $('btn-settings').addEventListener('click',function(){
   // 전사 품질 칩
   $('m-tx').querySelectorAll('.chip').forEach(function(b){b.setAttribute('aria-selected',String(b.dataset.v===txm));b.addEventListener('click',function(){post('/api/config',{transcribeModel:b.dataset.v}).then(function(){$('m-tx').querySelectorAll('.chip').forEach(function(x){x.setAttribute('aria-selected',String(x===b))})})})});
   // AI 로그인 버튼 — 터미널 탭을 열어 로그인 명령 실행
-  $('m-login-claude').addEventListener('click',function(){post('/term/start',{agent:'login-claude'}).then(function(r){if(r.url)window.open(r.url,'_blank')})});
-  $('m-login-codex').addEventListener('click',function(){post('/term/start',{agent:'login-codex'}).then(function(r){if(r.url)window.open(r.url,'_blank')})});
+  // 서버가 {error:...}를 돌려줘도 조용히 무시하면 버튼이 먹통처럼 보인다. 반드시 표시한다.
+  function openTerm(agent){post('/term/start',{agent:agent}).then(function(r){
+   if(!r||!r.url){alert((r&&r.error)||'터미널을 열지 못했습니다.');return}
+   var w=window.open(r.url,'_blank');
+   if(!w)alert('팝업이 차단되었습니다. 아래 주소를 직접 열어주세요.\n\n'+r.url)})
+   .catch(function(){alert('터미널 요청에 실패했습니다 — 서버 로그를 확인하세요.')})}
+  $('m-login-claude').addEventListener('click',function(){openTerm('login-claude')});
+  $('m-login-codex').addEventListener('click',function(){openTerm('login-codex')});
   // 그래프 토글
   $('m-graph').addEventListener('change',function(){post('/api/config',{useGraph:$('m-graph').checked})});
   // 프로젝트 목록 렌더 + 추가/삭제

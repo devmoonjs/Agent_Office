@@ -87,37 +87,60 @@ python3 90-Meta/map-ui/server.py    # http://127.0.0.1:57910
 
 ## 설정
 
-- `90-Meta/repos.md` — 분석 대상 repo 절대경로를 한 줄에 하나씩 적는다.
-- `90-Meta/.env` — `.env.example`를 복사해 토큰을 채운다. git에 올라가지 않는다.
-- `CLAUDE.md` — 에이전트 운영 규칙. 자신의 문서 규칙에 맞게 고쳐 쓴다.
+사용자 파일은 git 추적 대상이 아니다. `setup.sh`가 예시 파일을 복사해 만들며, 업데이트해도 덮어쓰지 않는다.
+
+- `90-Meta/repos.md` — 분석 대상 폴더 절대경로를 한 줄에 하나씩. 설정 화면에서 추가해도 된다.
+- `90-Meta/.env` — 토큰(텔레그램·Notion 등 선택 기능용).
+- `CLAUDE.local.md` — 에이전트 운영 규칙에 덧붙일 내 규칙. `CLAUDE.md`는 업데이트로 갱신되므로 직접 고치지 않는다.
+
+## 업데이트
+
+설정 화면(왼쪽 아래 ⚙) > **버전** 절의 `[업데이트]` 버튼을 누른다. 내려받고 서버까지 자동으로 재시작한다.
+
+터미널에서 하려면:
+
+```bash
+cd ~/Agent_Office && bash update.sh      # 상태만 보려면 bash update.sh --check
+```
 
 ## 윈도우 설치 (WSL2)
 
 네이티브 윈도우는 지원하지 않는다. WSL2 Ubuntu 안에서 클론한다.
 
-### 자동 설치 (관리자 PowerShell)
+### 자동 설치 — 관리자 PowerShell에 한 줄
 
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process; .\install.ps1
+irm https://raw.githubusercontent.com/devmoonjs/Agent_Office/main/install.ps1 | iex
 ```
 
-WSL2 설치 확인 → Ubuntu 패키지 → Node.js → Claude Code → 레포 클론 → 서버 기동을
-순서대로 처리한다. 재실행해도 안전하다.
+WSL2 확인 → Ubuntu 패키지 → Claude Code → 클론 → 점검 → 서버 기동까지 처리한다. 재실행해도 안전하다.
+
+WSL2가 처음이면 1단계에서 멈추고 재부팅을 안내한다. 재부팅 후 시작 메뉴에서 **Ubuntu**를 열어
+사용자명과 비밀번호를 만든 다음, 같은 명령을 한 번 더 실행하면 이어진다.
+
+> 스크립트 파일을 직접 받아 실행하려면 인코딩에 주의한다. `.ps1`은 UTF-8 **BOM**으로
+> 저장돼야 Windows PowerShell 5.1이 한글을 바르게 읽는다. `irm | iex` 방식은 이 문제가 없다.
 
 ### 수동 설치 (Ubuntu 터미널)
 
 ```bash
-sudo apt update && sudo apt install -y git python3 python3-pip tmux ttyd pandoc ffmpeg
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt install -y nodejs
-sudo npm install -g @anthropic-ai/claude-code && claude      # 로그인
-git clone https://github.com/devmoonjs/Agent_Office.git && cd Agent_Office
-bash setup.sh
+sudo apt update && sudo apt install -y git python3 python3-pip tmux pandoc ffmpeg curl
+sudo curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.$(uname -m)" -o /usr/local/bin/ttyd
+sudo chmod +x /usr/local/bin/ttyd
+curl -fsSL https://claude.ai/install.sh | bash      # Node.js 불필요
+git clone https://github.com/devmoonjs/Agent_Office.git ~/Agent_Office
+cd ~/Agent_Office && bash setup.sh
+claude                              # 브라우저 로그인
 python3 90-Meta/map-ui/server.py    # 윈도우 브라우저에서 http://127.0.0.1:57910
 ```
 
+Claude Code는 npm 전역 설치를 쓰지 않는다. npm 11.19+가 install script를 기본 차단해
+`postinstall`이 건너뛰어지고 반쪽 설치가 되기 때문이다. 공식 설치 스크립트는 `~/.local/bin`에
+넣으므로 Node.js 자체가 필요 없다(Codex CLI를 쓸 때만 별도로 설치한다).
+
 ### 반드시 지킬 것
 
-- **분석 대상 repo는 WSL 안에 클론한다.** `/mnt/c/...` 경로는 git diff가 느리고 파일 감시가 안 된다
+- **분석 대상 폴더는 WSL 안에 둔다.** `/mnt/c/...` 경로는 git diff가 느리고 파일 감시가 불안정하다
 - **스케줄러**: launchd 대신 cron. 재부팅 시 `wsl -d Ubuntu -- true`를 작업 스케줄러에 등록하거나 `/etc/wsl.conf`의 `[boot] systemd=true`로 cron을 살린다
 - **회의 전사**: faster-whisper(CPU)로 자동 폴백. GPU 없으면 1시간 녹음에 10분 이상
 
