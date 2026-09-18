@@ -30,7 +30,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -2672,14 +2672,120 @@ MEETING_PERSONA = (
     "회의록 본문은 결정·액션아이템·논의를 구분해 정리하고 발언자 추정은 '추정'으로 표기한다.")
 
 
+# ── 녹음 저장 (Docker 불필요) ─────────────────────────
+# 00-Inbox/recordings/ 에 meta.json + 오디오를 쓰는 것이 전부다. Neo4j도 review-ui도 필요 없다.
+# 예전에는 이 셋을 review-ui(Docker) 로 프록시했는데, Docker가 없는 환경(윈도우 기본 설치)에서는
+# 회의 녹음이 통째로 막혔다. 파일 레이아웃은 review-ui와 동일해 둘이 공존해도 문제없다.
+AUDIO_EXT = {"audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/wav": "wav",
+             "audio/ogg": "ogg", "audio/webm": "webm"}
+MAX_AUDIO = 512 * 1024 * 1024        # 1건 상한. 1시간 webm이 보통 30~60MB다
+
+
+def rec_list():
+    """녹음 목록 — 최신순. 전사본이 있으면 상태를 transcribed로 올린다."""
+    RECORD_DIR.mkdir(parents=True, exist_ok=True)
+    out = []
+    for f in sorted(RECORD_DIR.glob("*.meta.json"), reverse=True):
+        try:
+            m = json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        rid = m.get("id") or f.name[:-len(".meta.json")]
+        status = m.get("status", "?")
+        if status == "uploaded" and (RECORD_DIR / f"{rid}.transcript.md").is_file():
+            status = "transcribed"
+        out.append({"id": rid, "topic": m.get("topic"), "recorded_at": m.get("recorded_at"),
+                    "attendees": m.get("attendees", []), "status": status})
+    return out
+
+
+def rec_create(body):
+    """메타 생성 → id 반환. 오디오는 이어서 /audio 로 올라온다."""
+    topic = str(body.get("topic") or "").strip() or "미팅"
+    slug = re.sub(r"[^\w가-힣-]+", "-", topic)[:30].strip("-") or "미팅"
+    rid = time.strftime("%Y%m%d-%H%M%S") + "-" + slug
+    RECORD_DIR.mkdir(parents=True, exist_ok=True)
+    meta = {"id": rid, "topic": topic,
+            "attendees": [str(a).strip() for a in (body.get("attendees") or []) if str(a).strip()],
+            "project": str(body.get("project") or "").strip(),
+            "context": str(body.get("context") or "").strip(),
+            "recorded_at": time.strftime("%Y-%m-%d %H:%M"),
+            "status": "meta-created"}
+    (RECORD_DIR / f"{rid}.meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "id": rid}
+
+
+def rec_audio(handler, rid):
+    """raw 오디오 본문을 받아 저장한다. Content-Type으로 확장자를 정한다."""
+    rid = Path(rid).name                       # path traversal 방지
+    meta_f = RECORD_DIR / f"{rid}.meta.json"
+    if not meta_f.is_file():
+        return 404, {"error": "메타 없음 — 먼저 POST /graph-api/recordings 로 생성"}
+    try:
+        size = int(handler.headers.get("Content-Length", "0") or 0)
+    except ValueError:
+        size = 0
+    if size <= 0:
+        return 400, {"error": "오디오 본문이 비어 있습니다"}
+    if size > MAX_AUDIO:
+        return 413, {"error": f"오디오가 너무 큽니다 ({size // 1048576}MB) — 상한 {MAX_AUDIO // 1048576}MB"}
+    ctype = (handler.headers.get("Content-Type") or "").split(";")[0].strip()
+    audio_f = RECORD_DIR / f"{rid}.{AUDIO_EXT.get(ctype, 'webm')}"
+    try:
+        with open(audio_f, "wb") as fh:
+            remaining = size
+            while remaining > 0:
+                chunk = handler.rfile.read(min(65536, remaining))
+                if not chunk:
+                    break
+                fh.write(chunk)
+                remaining -= len(chunk)
+        if remaining > 0:
+            audio_f.unlink(missing_ok=True)
+            return 400, {"error": "업로드가 중간에 끊겼습니다 — 다시 시도하세요"}
+        meta = json.loads(meta_f.read_text(encoding="utf-8"))
+        meta.update(status="uploaded", audio=audio_f.name)
+        meta_f.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as e:
+        return 500, {"error": f"오디오 저장 실패: {str(e)[-160:]}"}
+    return 200, {"ok": True, "file": audio_f.name}
+
+
+def handle_recordings(handler, method, sub):
+    """/graph-api/recordings* 를 로컬에서 처리한다. 처리했으면 True."""
+    if method == "GET" and sub == "recordings":
+        handler._json(rec_list())
+        return True
+    if method == "POST" and sub == "recordings":
+        try:
+            n = int(handler.headers.get("Content-Length", "0"))
+            body = json.loads(handler.rfile.read(n).decode()) if n else {}
+        except (ValueError, json.JSONDecodeError):
+            handler._json_status(400, {"error": "잘못된 요청 본문"})
+            return True
+        handler._json(rec_create(body))
+        return True
+    m = re.fullmatch(r"recordings/([^/]+)/audio", sub)
+    if method == "POST" and m:
+        status, data = rec_audio(handler, unquote(m.group(1)))
+        handler._json_status(status, data)
+        return True
+    return False
+
+
 # ── review-ui 프록시 ─────────────────────────────────
-# /graph-api/<path> → REVIEW_API/api/<path>. 관계 검토·그래프·동의어·녹음 API를 새 셸(office.html)이
+# /graph-api/<path> → REVIEW_API/api/<path>. 관계 검토·그래프·동의어 API를 새 셸(office.html)이
 # 같은 origin에서 쓰기 위한 통로. review-ui 코드베이스는 그대로 두고(Docker) 여기서 중계만 한다.
+# 녹음(recordings)만은 위에서 로컬 처리한다 — Docker 없이도 회의 기록이 돌아가야 한다.
 def proxy_review(handler, method):
     import urllib.request
     import urllib.error
     u = urlparse(handler.path)
-    target = REVIEW_API + "/api/" + u.path[len("/graph-api/"):] + (("?" + u.query) if u.query else "")
+    sub = u.path[len("/graph-api/"):]
+    if handle_recordings(handler, method, sub):
+        return
+    target = REVIEW_API + "/api/" + sub + (("?" + u.query) if u.query else "")
     body = None
     if method == "POST":
         try:
@@ -2697,7 +2803,9 @@ def proxy_review(handler, method):
     except urllib.error.HTTPError as e:
         data, status, rct = e.read(), e.code, e.headers.get("Content-Type", "application/json")
     except (urllib.error.URLError, OSError) as e:
-        data = json.dumps({"error": "review-ui(57900)에 연결할 수 없습니다 — 컨테이너 jarvis-review-ui 상태 확인",
+        data = json.dumps({"error": "관계 검토·그래프 기능은 Neo4j(Docker)가 필요합니다 — "
+                                    "설정에서 '지식 그래프 사용'을 끄거나 Docker Desktop을 설치하세요. "
+                                    "회의 녹음·전사는 그래프 없이도 동작합니다.",
                            "detail": str(e)[-200:]}, ensure_ascii=False).encode()
         status, rct = 502, "application/json; charset=utf-8"
     handler.send_response(status)
@@ -2952,8 +3060,11 @@ class H(BaseHTTPRequestHandler):
         pass
 
     def _json(self, obj):
+        self._json_status(200, obj)
+
+    def _json_status(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode()
-        self.send_response(200)
+        self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
@@ -3338,7 +3449,6 @@ class H(BaseHTTPRequestHandler):
             if n <= 0 or n > UPLOAD_MAX:
                 self.send_error(413 if n > UPLOAD_MAX else 400)
                 return
-            from urllib.parse import unquote
             raw = unquote(self.headers.get("X-File-Name", "") or "file")
             name = re.sub(r"[^\w.\-가-힣 ()\[\]]", "_", Path(raw).name).strip() or "file"
             data = self.rfile.read(n)
