@@ -11,7 +11,7 @@ description: 00-Inbox에 투입된 회의록·기술문서·스펙 등 외부 �
 
 - `.md`, `.txt`: 직접 읽는다
 - `.pdf`: Read 도구로 직접 읽는다
-- `.docx`, `.rtf`: `textutil -convert txt <파일> -output <임시경로>`로 변환 후 읽는다 (macOS 내장)
+- `.docx`, `.rtf`: macOS에서는 `textutil -convert txt <파일> -output <임시경로>`로 변환 후 읽는다 (macOS 내장). Linux/WSL에서는 `pandoc -t markdown <파일> -o <임시경로>`를 사용한다 (`apt install pandoc`). `command -v textutil`로 먼저 확인하고 없으면 pandoc으로 폴백한다
 - 이미지(화이트보드 사진 등): Read 도구로 시각적으로 읽는다
 - **녹음 (`00-Inbox/recordings/`)**: 대시보드 녹음 버튼 또는 직접 투입된 오디오(.webm/.m4a 등). 처리 규약은 아래 "녹음 처리" 절 참조
 - **화자 분리된 전사 텍스트**: 외부 STT 도구(Clova Note, Zoom, Teams 등)의 결과물을 `.md`/`.txt`로 투입한 경우. 아래 "화자 분리된 전사 처리" 절 참조 — 회의록으로 분류해 처리하되 화자 확정 절차가 추가된다
